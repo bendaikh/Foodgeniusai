@@ -1,0 +1,53 @@
+# Android Signing Key Configuration
+# IMPORTANT: Do NOT commit this file to version control!
+# Keep this file secure and backed up safely.
+
+# Your keystore password (the password you used when creating the keystore)
+storePassword=YOUR_KEYSTORE_PASSWORD_HERE
+
+# Your key password (the password for the specific key alias)
+keyPassword=YOUR_KEY_PASSWORD_HERE
+
+# The alias you used when creating the key
+keyAlias=gourmetai
+
+# The path to your keystore file (relative to this file's location)
+storeFile=gourmetai-release-key.jks
+
+# ========================================
+# HOW TO CREATE YOUR KEYSTORE:
+# ========================================
+#
+# 1. Open PowerShell or Command Prompt
+# 2. Navigate to the android folder:
+#    cd C:\Users\Espacegamers\Documents\gourmetai\android
+#
+# 3. Run this command:
+#    keytool -genkey -v -keystore gourmetai-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias gourmetai
+#
+# 4. You'll be prompted for:
+#    - Keystore password (create a strong password)
+#    - Key password (can be same as keystore password)
+#    - Your name
+#    - Organizational unit
+#    - Organization name
+#    - City/Locality
+#    - State/Province
+#    - Country code (2 letters, e.g., US)
+#
+# 5. After creation, you'll have a file: gourmetai-release-key.jks
+#
+# 6. Update the passwords above in this file
+#
+# 7. Keep the .jks file and this file SECURE and BACKED UP!
+#    - Store in password manager
+#    - Keep offline backup
+#    - Never commit to git
+#
+# ========================================
+# IMPORTANT NOTES:
+# ========================================
+# - If you lose this keystore, you CANNOT update your app on Play Store
+# - You'll have to publish a completely new app
+# - Google CANNOT help you recover a lost keystore
+# - Make multiple backups in secure locations
