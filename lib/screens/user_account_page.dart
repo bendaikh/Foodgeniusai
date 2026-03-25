@@ -710,59 +710,116 @@ class _UserAccountPageState extends State<UserAccountPage> {
                         )
                   : _buildPlaceholderImage(150),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recipe.title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.access_time,
-                        size: 14,
-                        color: AppTheme.greyText,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recipe.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${recipe.totalTime} min',
-                        style: const TextStyle(
-                          fontSize: 12,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.access_time,
+                          size: 14,
                           color: AppTheme.greyText,
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryGreen.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          recipe.difficulty,
+                        const SizedBox(width: 4),
+                        Text(
+                          '${recipe.totalTime} min',
                           style: const TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.primaryGreen,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: AppTheme.greyText,
                           ),
                         ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryGreen.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            recipe.difficulty,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: AppTheme.primaryGreen,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (recipe.description != null && recipe.description!.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        recipe.description!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.greyText,
+                          height: 1.4,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                ],
+                    const Spacer(),
+                    const Divider(
+                      color: AppTheme.greyText,
+                      height: 20,
+                    ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.restaurant,
+                          size: 14,
+                          color: AppTheme.primaryGreen.withOpacity(0.7),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${recipe.ingredients.length} ingredients',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.greyText,
+                          ),
+                        ),
+                        if (recipe.cuisine != null && recipe.cuisine!.isNotEmpty) ...[
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.public,
+                            size: 14,
+                            color: AppTheme.primaryGreen.withOpacity(0.7),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              recipe.cuisine!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.greyText,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
