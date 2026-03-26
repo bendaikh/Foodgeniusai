@@ -591,7 +591,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildInstructionStep('1', 'Go to Firebase Console', 'https://console.firebase.google.com/'),
-              _buildInstructionStep('2', 'Create new project', 'Name it "GourmetAI"'),
+              _buildInstructionStep('2', 'Create new project', 'Name it "FoodGeniusAI"'),
               _buildInstructionStep('3', 'Add Web App', 'Click </> icon'),
               _buildInstructionStep('4', 'Copy config values', 'Paste them in the fields above'),
               _buildInstructionStep('5', 'Enable Authentication', 'Email/Password method'),

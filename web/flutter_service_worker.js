@@ -1,10 +1,10 @@
-// GourmetAI Service Worker for Enhanced Performance
+// FoodGeniusAI Service Worker for Enhanced Performance
 // This service worker provides aggressive caching for better performance
 
 'use strict';
 
-const CACHE_NAME = 'gourmetai-cache-v1';
-const DATA_CACHE_NAME = 'gourmetai-data-cache-v1';
+const CACHE_NAME = 'foodgeniusai-cache-v2';
+const DATA_CACHE_NAME = 'foodgeniusai-data-cache-v2';
 
 // Files to cache immediately on install
 const FILES_TO_CACHE = [

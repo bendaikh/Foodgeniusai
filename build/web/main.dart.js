@@ -98831,7 +98831,7 @@ $0(){},
 $S:0}
 A.avf.prototype={
 $1(a){var s=null,r=this.a,q=t.p
-r=A.fj(A.al(A.a([r.p9("1","Go to Firebase Console","https://console.firebase.google.com/"),r.p9("2","Create new project",'Name it "GourmetAI"'),r.p9("3","Add Web App","Click </> icon"),r.p9("4","Copy config values","Paste them in the fields above"),r.p9("5","Enable Authentication","Email/Password method"),r.p9("6","Create Firestore Database","Start in test mode"),r.p9("7","Enable Storage","For recipe images")],q),B.t,B.i,B.at),s)
+r=A.fj(A.al(A.a([r.p9("1","Go to Firebase Console","https://console.firebase.google.com/"),r.p9("2","Create new project",'Name it "FoodGeniusAI"'),r.p9("3","Add Web App","Click </> icon"),r.p9("4","Copy config values","Paste them in the fields above"),r.p9("5","Enable Authentication","Email/Password method"),r.p9("6","Create Firestore Database","Start in test mode"),r.p9("7","Enable Storage","For recipe images")],q),B.t,B.i,B.at),s)
 return A.B5(A.a([A.mb(!1,B.a4P,s,s,s,s,s,s,new A.ave(a),s,s)],q),B.D,r,B.a6c)},
 $S:92}
 A.ave.prototype={
