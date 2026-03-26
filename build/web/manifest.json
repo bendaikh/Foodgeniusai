@@ -1,0 +1,43 @@
+{
+    "name": "FoodGeniusAI - AI-Powered Recipe Generation",
+    "short_name": "FoodGeniusAI",
+    "description": "AI-powered recipe generation and culinary inspiration",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0A0E27",
+    "theme_color": "#00D9A5",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ],
+    "categories": ["food", "lifestyle", "productivity"],
+    "screenshots": [],
+    "related_applications": [],
+    "scope": "/",
+    "dir": "ltr",
+    "lang": "en-US"
+}
