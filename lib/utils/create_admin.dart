@@ -11,7 +11,7 @@ import '../firebase_options.dart';
 /// 2. Or add a button in your app to call createAdminUser()
 
 Future<void> main() async {
-  print('🔐 GourmetAI Admin User Setup');
+  print('🔐 FoodGeniusAI Admin User Setup');
   print('==============================\n');
   
   try {

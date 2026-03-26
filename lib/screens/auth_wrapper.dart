@@ -21,68 +21,37 @@ class _AuthWrapperState extends State<AuthWrapper> {
     return StreamBuilder<User?>(
       stream: _auth.authStateChanges(),
       builder: (context, snapshot) {
-        // Show loading while checking auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
+          // Show nothing — the HTML splash is still covering the screen
+          return const SizedBox.shrink();
         }
 
-        // Get the current user
         final user = snapshot.data;
-        
-        print('🔐 Auth state: ${user != null ? "Logged in as ${user.email}" : "Not logged in"}');
 
         if (user == null) {
-          // User not logged in, show landing page
           return const LandingPage();
         }
 
-        // User is logged in, check if admin using StreamBuilder for real-time updates
-        return StreamBuilder<DocumentSnapshot>(
-          stream: _firestore.collection('users').doc(user.uid).snapshots(),
+        return FutureBuilder<DocumentSnapshot>(
+          future: _firestore.collection('users').doc(user.uid).get(),
           builder: (context, userSnapshot) {
             if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Loading your profile...', style: TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                ),
-              );
+              return const SizedBox.shrink();
             }
 
-            if (userSnapshot.hasError) {
-              print('❌ Error loading user: ${userSnapshot.error}');
+            if (userSnapshot.hasError ||
+                userSnapshot.data == null ||
+                !userSnapshot.data!.exists) {
               return const LandingPage();
             }
 
-            final userData = userSnapshot.data;
-            
-            if (userData == null || !userData.exists) {
-              print('⚠️ User document not found');
-              return const LandingPage();
-            }
+            final data =
+                userSnapshot.data!.data() as Map<String, dynamic>?;
 
-            final data = userData.data() as Map<String, dynamic>?;
-            final isAdmin = data?['role'] == 'admin';
-            
-            print('👤 User role: ${data?['role']} | Is Admin: $isAdmin');
-
-            if (isAdmin) {
-              // User is admin, show admin dashboard
+            if (data?['role'] == 'admin') {
               return const AdminDashboard();
-            } else {
-              // Regular user, show user account page
-              return const UserAccountPage();
             }
+            return const LandingPage();
           },
         );
       },

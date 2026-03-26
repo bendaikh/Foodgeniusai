@@ -271,7 +271,7 @@ class SimpleFirebaseSeeder {
 
       // App Settings
       await _firestore.collection('settings').doc('app_config').set({
-        'appName': 'GourmetAI',
+        'appName': 'FoodGeniusAI',
         'maintenanceMode': false,
         'allowRegistration': true,
         'featuredRecipesEnabled': true,
@@ -283,8 +283,8 @@ class SimpleFirebaseSeeder {
       // Email Templates
       await _firestore.collection('settings').doc('email_templates').set({
         'welcomeEmailEnabled': true,
-        'welcomeEmailSubject': 'Welcome to GourmetAI!',
-        'welcomeEmailBody': 'Thank you for joining GourmetAI...',
+        'welcomeEmailSubject': 'Welcome to FoodGeniusAI!',
+        'welcomeEmailBody': 'Thank you for joining FoodGeniusAI...',
         'resetPasswordSubject': 'Reset Your Password',
         'updatedAt': FieldValue.serverTimestamp(),
       });

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static const Color primaryGreen = Color(0xFF2DD4BF);
@@ -8,41 +7,42 @@ class AppTheme {
   static const Color lightText = Color(0xFFFFFFFF);
   static const Color greyText = Color(0xFF94A3B8);
 
+  static const String _fontFamily = 'Inter';
+
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
       primaryColor: primaryGreen,
       scaffoldBackgroundColor: darkBackground,
-      textTheme: GoogleFonts.interTextTheme(
-        const TextTheme(
-          displayLarge: TextStyle(
-            fontSize: 48,
-            fontWeight: FontWeight.bold,
-            color: lightText,
-          ),
-          displayMedium: TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.bold,
-            color: lightText,
-          ),
-          headlineLarge: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-            color: lightText,
-          ),
-          headlineMedium: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: lightText,
-          ),
-          bodyLarge: TextStyle(
-            fontSize: 16,
-            color: lightText,
-          ),
-          bodyMedium: TextStyle(
-            fontSize: 14,
-            color: greyText,
-          ),
+      fontFamily: _fontFamily,
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(
+          fontSize: 48,
+          fontWeight: FontWeight.bold,
+          color: lightText,
+        ),
+        displayMedium: TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.bold,
+          color: lightText,
+        ),
+        headlineLarge: TextStyle(
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+          color: lightText,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: lightText,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: 16,
+          color: lightText,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 14,
+          color: greyText,
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

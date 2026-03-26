@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
-import 'user_account_page.dart';
 
 class UserAuthPage extends StatefulWidget {
   const UserAuthPage({super.key});
@@ -72,11 +71,8 @@ class _UserAuthPageState extends State<UserAuthPage> {
           ),
         );
 
-        // Navigate to user account page
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const UserAccountPage()),
-        );
+        // Navigate back to landing page
+        Navigator.pop(context);
       }
     } catch (e) {
       setState(() {
@@ -115,7 +111,7 @@ class _UserAuthPageState extends State<UserAuthPage> {
                   ),
                   SizedBox(height: isMobile ? 12 : 16),
                   Text(
-                    'GourmetAI',
+                    'FoodGeniusAI',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                           color: AppTheme.primaryGreen,
                           fontWeight: FontWeight.bold,

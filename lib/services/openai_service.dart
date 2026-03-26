@@ -53,6 +53,78 @@ class OpenAIService {
     }
   }
 
+  Future<List<RecipeModel>> generateRecipesFromIngredients({
+    required List<String> ingredients,
+    int numberOfRecipes = 1,
+  }) async {
+    if (settings.openaiApiKey == null || settings.openaiApiKey!.isEmpty) {
+      throw Exception('OpenAI API key not configured. Please configure it in Admin Settings.');
+    }
+
+    final prompt = _buildIngredientsPrompt(
+      ingredients: ingredients,
+      numberOfRecipes: numberOfRecipes,
+    );
+
+    try {
+      print('🔑 Making OpenAI API request for recipes from ingredients...');
+      print('Ingredients: ${ingredients.join(", ")}');
+      
+      final model = settings.openaiModel ?? 'gpt-4o-mini';
+      final supportsJsonMode = model.contains('gpt-4-turbo') || 
+                                model.contains('gpt-4o') ||
+                                model.contains('gpt-3.5-turbo-1106') ||
+                                model.contains('gpt-3.5-turbo-0125');
+      
+      final requestBody = {
+        'model': model,
+        'messages': [
+          {
+            'role': 'system',
+            'content': 'You are a professional chef and recipe creator. You MUST respond with valid JSON only, no other text. Ensure all strings are properly escaped and complete.'
+          },
+          {
+            'role': 'user',
+            'content': prompt,
+          }
+        ],
+        'max_tokens': (settings.maxTokens ?? 2000) * 2,
+        'temperature': settings.temperature ?? 0.7,
+      };
+      
+      if (supportsJsonMode) {
+        requestBody['response_format'] = {'type': 'json_object'};
+        print('✅ Using JSON mode');
+      } else {
+        print('⚠️ JSON mode not supported by $model, using regular mode');
+        requestBody['max_tokens'] = ((settings.maxTokens ?? 2000) * 2) + 1000;
+      }
+      
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${settings.openaiApiKey}',
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final content = data['choices'][0]['message']['content'];
+        print('📥 Received response from OpenAI');
+        return _parseMultipleRecipesFromAI(content, ingredients);
+      } else {
+        print('❌ OpenAI API error: ${response.statusCode}');
+        print('Response: ${response.body}');
+        final errorData = jsonDecode(response.body);
+        throw Exception('OpenAI API error: ${errorData['error']['message']}');
+      }
+    } catch (e) {
+      throw Exception('Failed to generate recipes: $e');
+    }
+  }
+
   Future<RecipeModel> generateRecipe({
     required String craving,
     String? mealType,
@@ -275,6 +347,55 @@ IMPORTANT: The image must look extremely realistic, like a real photograph taken
     }
   }
 
+  String _buildIngredientsPrompt({
+    required List<String> ingredients,
+    required int numberOfRecipes,
+  }) {
+    return '''
+You are a professional chef. Create $numberOfRecipes different recipes using the following ingredients: ${ingredients.join(", ")}
+
+Requirements:
+- Each recipe should primarily use the provided ingredients
+- It's okay to suggest a few common pantry staples (salt, pepper, oil, etc.)
+- Make recipes diverse (different cuisines, cooking methods, meal types)
+- Each recipe should be complete and realistic
+
+IMPORTANT: Return ONLY valid JSON, no other text. Use this exact structure:
+
+{
+  "recipes": [
+    {
+      "title": "Recipe Name Here",
+      "description": "Brief appetizing description",
+      "cuisine": "Italian",
+      "mealType": "Main Course",
+      "difficulty": "easy",
+      "prepTime": 15,
+      "cookTime": 30,
+      "servings": 2,
+      "ingredients": [
+        {"name": "pasta", "amount": "200", "unit": "g"},
+        {"name": "tomatoes", "amount": "4", "unit": "pieces"}
+      ],
+      "instructions": [
+        {"step": 1, "text": "Boil water in a large pot"},
+        {"step": 2, "text": "Cook pasta according to package"}
+      ],
+      "dietary": ["None"],
+      "nutrition": {
+        "calories": "350",
+        "protein": "25g",
+        "carbs": "40g",
+        "fat": "10g"
+      }
+    }
+  ]
+}
+
+Return ONLY the JSON object with the recipes array, nothing else.
+''';
+  }
+
   String _buildRecipePrompt({
     required String craving,
     String? mealType,
@@ -321,6 +442,137 @@ IMPORTANT: Return ONLY valid JSON, no other text. Use this exact structure:
 
 Return ONLY the JSON object, nothing else.
 ''';
+  }
+
+  List<RecipeModel> _parseMultipleRecipesFromAI(String content, List<String> originalIngredients) {
+    try {
+      print('🔍 Raw AI Response:');
+      print(content);
+      print('---');
+      
+      String jsonStr = content.trim();
+      
+      if (content.contains('```json')) {
+        final start = content.indexOf('```json') + 7;
+        final end = content.indexOf('```', start);
+        if (end > start) {
+          jsonStr = content.substring(start, end).trim();
+        }
+      } else if (content.contains('```')) {
+        final start = content.indexOf('```') + 3;
+        final end = content.indexOf('```', start);
+        if (end > start) {
+          jsonStr = content.substring(start, end).trim();
+        }
+      }
+      
+      final jsonStart = jsonStr.indexOf('{');
+      final jsonEnd = jsonStr.lastIndexOf('}');
+      
+      if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+        jsonStr = jsonStr.substring(jsonStart, jsonEnd + 1);
+      }
+      
+      print('🔍 Extracted JSON:');
+      print(jsonStr);
+      print('---');
+
+      final responseData = jsonDecode(jsonStr);
+      final List<RecipeModel> recipes = [];
+
+      if (responseData['recipes'] != null) {
+        for (var recipeData in responseData['recipes']) {
+          final recipe = _parseRecipeData(recipeData, originalIngredients.join(', '));
+          recipes.add(recipe);
+        }
+      }
+
+      print('✅ Parsed ${recipes.length} recipes successfully');
+      return recipes;
+    } catch (e) {
+      print('❌ Parse error: $e');
+      throw Exception('Failed to parse recipes from AI response: $e');
+    }
+  }
+
+  RecipeModel _parseRecipeData(Map<String, dynamic> recipeData, String fallbackTitle) {
+    List<Map<String, dynamic>> ingredients = [];
+    if (recipeData['ingredients'] != null) {
+      for (var ing in recipeData['ingredients']) {
+        if (ing is Map) {
+          ingredients.add({
+            'name': ing['name']?.toString() ?? '',
+            'amount': ing['amount']?.toString() ?? '',
+            'unit': ing['unit']?.toString() ?? '',
+          });
+        } else if (ing is String) {
+          ingredients.add({
+            'name': ing,
+            'amount': '',
+            'unit': '',
+          });
+        }
+      }
+    }
+    
+    if (ingredients.isEmpty) {
+      ingredients.add({
+        'name': 'See full recipe for ingredients',
+        'amount': '',
+        'unit': '',
+      });
+    }
+
+    List<Map<String, dynamic>> instructions = [];
+    if (recipeData['instructions'] != null) {
+      int step = 1;
+      for (var inst in recipeData['instructions']) {
+        if (inst is Map) {
+          instructions.add({
+            'step': inst['step'] ?? step,
+            'text': inst['text']?.toString() ?? '',
+          });
+        } else if (inst is String) {
+          instructions.add({
+            'step': step,
+            'text': inst,
+          });
+        }
+        step++;
+      }
+    }
+    
+    if (instructions.isEmpty) {
+      instructions.add({
+        'step': 1,
+        'text': 'Please refer to the full recipe for detailed instructions.',
+      });
+    }
+
+    return RecipeModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString() + '_${ingredients.length}',
+      userId: '',
+      title: recipeData['title']?.toString() ?? fallbackTitle,
+      description: recipeData['description']?.toString() ?? 'A delicious recipe',
+      cuisine: recipeData['cuisine']?.toString() ?? 'International',
+      mealType: recipeData['mealType']?.toString() ?? 'Main Course',
+      difficulty: recipeData['difficulty']?.toString() ?? 'intermediate',
+      prepTime: int.tryParse(recipeData['prepTime']?.toString() ?? '15') ?? 15,
+      cookTime: int.tryParse(recipeData['cookTime']?.toString() ?? '30') ?? 30,
+      totalTime: (int.tryParse(recipeData['prepTime']?.toString() ?? '15') ?? 15) + 
+                 (int.tryParse(recipeData['cookTime']?.toString() ?? '30') ?? 30),
+      servings: int.tryParse(recipeData['servings']?.toString() ?? '2') ?? 2,
+      ingredients: ingredients,
+      instructions: instructions,
+      dietary: recipeData['dietary'] != null 
+          ? List<String>.from(recipeData['dietary'])
+          : [],
+      nutrition: recipeData['nutrition'] != null
+          ? Map<String, dynamic>.from(recipeData['nutrition'])
+          : {},
+      imageUrl: null,
+      createdAt: DateTime.now(),
+    );
   }
 
   RecipeModel _parseRecipeFromAI(String content, String originalCraving) {

@@ -105,7 +105,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'GourmetAI',
+                'FoodGeniusAI',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,

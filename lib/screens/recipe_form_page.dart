@@ -188,12 +188,31 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
+    final isTablet = screenWidth >= 768 && screenWidth < 1200;
+    final isDesktop = screenWidth >= 1200;
+    
+    double horizontalPadding;
+    double verticalPadding;
+    
+    if (isMobile) {
+      horizontalPadding = 16.0;
+      verticalPadding = 16.0;
+    } else if (isTablet) {
+      horizontalPadding = 48.0;
+      verticalPadding = 32.0;
+    } else {
+      horizontalPadding = screenWidth * 0.08;
+      verticalPadding = 48.0;
+    }
     
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

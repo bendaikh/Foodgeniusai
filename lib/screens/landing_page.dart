@@ -1,25 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'pricing_page.dart';
 import 'user_auth_page.dart';
 import 'recipe_form_page.dart';
+import 'user_account_page.dart';
+import 'kitchen_treasures_page.dart';
 
-class LandingPage extends StatelessWidget {
+class LandingPage extends StatefulWidget {
   const LandingPage({super.key});
+
+  @override
+  State<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  bool _isHoveringRecipe = false;
+  bool _isHoveringKitchen = false;
 
   void _handleStartCreating(BuildContext context) {
     final authService = AuthService();
     final user = authService.currentUser;
     
     if (user != null) {
-      // User is logged in, go directly to recipe form
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const RecipeFormPage()),
       );
     } else {
-      // User not logged in, go to auth page
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const UserAuthPage()),
+      );
+    }
+  }
+
+  void _handleKitchenTreasures(BuildContext context) {
+    final authService = AuthService();
+    final user = authService.currentUser;
+    
+    if (user != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const KitchenTreasuresPage()),
+      );
+    } else {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const UserAuthPage()),
@@ -31,12 +58,31 @@ class LandingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
+    final isTablet = screenWidth >= 768 && screenWidth < 1200;
+    final isDesktop = screenWidth >= 1200;
+    
+    double horizontalPadding;
+    double verticalPadding;
+    
+    if (isMobile) {
+      horizontalPadding = 16.0;
+      verticalPadding = 16.0;
+    } else if (isTablet) {
+      horizontalPadding = 48.0;
+      verticalPadding = 32.0;
+    } else {
+      horizontalPadding = screenWidth * 0.08;
+      verticalPadding = 48.0;
+    }
     
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
             child: Column(
               children: [
                 _buildHeader(context),
@@ -59,41 +105,39 @@ class LandingPage extends StatelessWidget {
   Widget _buildHeader(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
+    final authService = AuthService();
+    final user = authService.currentUser;
     
     if (isMobile) {
-      // Mobile header - simplified
       return Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'GourmetAI',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: AppTheme.primaryGreen,
-                      fontWeight: FontWeight.bold,
-                    ),
+        Text(
+          'FoodGeniusAI',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: AppTheme.primaryGreen,
+                fontWeight: FontWeight.bold,
               ),
+        ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const UserAuthPage()),
-                      );
-                    },
-                    icon: const Icon(Icons.person_outline, color: AppTheme.primaryGreen, size: 20),
-                    tooltip: 'Login',
-                  ),
-                  IconButton(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/admin');
-                    },
-                    icon: const Icon(Icons.admin_panel_settings, color: AppTheme.greyText, size: 20),
-                    tooltip: 'Admin',
-                  ),
+                  if (user != null)
+                    _buildUserMenu(context, user, isMobile)
+                  else ...[
+                    IconButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const UserAuthPage()),
+                        );
+                      },
+                      icon: const Icon(Icons.person_outline, color: AppTheme.primaryGreen, size: 20),
+                      tooltip: 'Login',
+                    ),
+                  ],
                 ],
               ),
             ],
@@ -102,12 +146,11 @@ class LandingPage extends StatelessWidget {
       );
     }
     
-    // Desktop header - full version
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'GourmetAI',
+          'FoodGeniusAI',
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: AppTheme.primaryGreen,
                 fontWeight: FontWeight.bold,
@@ -115,48 +158,137 @@ class LandingPage extends StatelessWidget {
         ),
         Row(
           children: [
-            TextButton(
-              onPressed: () {},
-              child: const Text(
+            const TextButton(
+              onPressed: null,
+              child: Text(
                 'Home',
                 style: TextStyle(color: Colors.white),
               ),
             ),
-            TextButton(
-              onPressed: () {},
-              child: const Text(
-                'Collection',
-                style: TextStyle(color: AppTheme.greyText),
-              ),
-            ),
             const SizedBox(width: 16),
-            IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.wb_sunny_outlined, color: Colors.amber),
+            const IconButton(
+              onPressed: null,
+              icon: Icon(Icons.wb_sunny_outlined, color: Colors.amber),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const UserAuthPage()),
-                );
-              },
-              icon: const Icon(Icons.person_outline, color: AppTheme.primaryGreen),
-              tooltip: 'Login as User',
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/admin');
-              },
-              icon: const Icon(Icons.admin_panel_settings,
-                  color: AppTheme.greyText),
-              tooltip: 'Admin Panel',
-            ),
+            if (user != null)
+              _buildUserMenu(context, user, isMobile)
+            else ...[
+              IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const UserAuthPage()),
+                  );
+                },
+                icon: const Icon(Icons.person_outline, color: AppTheme.primaryGreen),
+                tooltip: 'Login as User',
+              ),
+            ],
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildUserMenu(BuildContext context, User user, bool isMobile) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        String displayName = 'User';
+        
+        if (snapshot.hasData && snapshot.data != null) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          displayName = data?['name'] ?? user.email?.split('@')[0] ?? 'User';
+        } else {
+          displayName = user.email?.split('@')[0] ?? 'User';
+        }
+        
+        return PopupMenuButton<String>(
+          offset: const Offset(0, 50),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isMobile ? 8 : 12,
+              vertical: isMobile ? 4 : 8,
+            ),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryGreen.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppTheme.primaryGreen.withOpacity(0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.person,
+                  color: AppTheme.primaryGreen,
+                  size: isMobile ? 16 : 20,
+                ),
+                SizedBox(width: isMobile ? 4 : 8),
+                Text(
+                  displayName,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: isMobile ? 12 : 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: isMobile ? 4 : 8),
+                Icon(
+                  Icons.arrow_drop_down,
+                  color: AppTheme.primaryGreen,
+                  size: isMobile ? 16 : 20,
+                ),
+              ],
+            ),
+          ),
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'profile',
+              child: Row(
+                children: [
+                  Icon(Icons.person, color: AppTheme.primaryGreen, size: 18),
+                  SizedBox(width: 12),
+                  Text('My Profile'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'logout',
+              child: Row(
+                children: [
+                  Icon(Icons.logout, color: Colors.red, size: 18),
+                  SizedBox(width: 12),
+                  Text('Logout'),
+                ],
+              ),
+            ),
+          ],
+          onSelected: (value) async {
+            if (value == 'profile') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const UserAccountPage()),
+              );
+            } else if (value == 'logout') {
+              await AuthService().signOut();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Logged out successfully'),
+                    backgroundColor: AppTheme.primaryGreen,
+                  ),
+                );
+              }
+            }
+          },
+        );
+      },
     );
   }
 
@@ -204,7 +336,7 @@ class LandingPage extends StatelessWidget {
 
   Widget _buildSubtitle(bool isMobile) {
     return Text(
-      'Choose your path and let GourmetAI guide you to\nprofessional perfection.',
+      'Choose your path and let FoodGeniusAI guide you to\nprofessional perfection.',
       style: TextStyle(
         fontSize: isMobile ? 14 : 16,
         color: AppTheme.greyText,
@@ -215,7 +347,6 @@ class LandingPage extends StatelessWidget {
 
   Widget _buildOptions(BuildContext context, bool isMobile) {
     if (isMobile) {
-      // Stack cards vertically on mobile
       return Column(
         children: [
           _buildOptionCard(
@@ -227,6 +358,8 @@ class LandingPage extends StatelessWidget {
             buttonText: 'Start Creating',
             onPressed: () => _handleStartCreating(context),
             isMobile: true,
+            isHovering: _isHoveringRecipe,
+            onHoverChange: (hovering) => setState(() => _isHoveringRecipe = hovering),
           ),
           const SizedBox(height: 24),
           _buildOptionCard(
@@ -236,14 +369,15 @@ class LandingPage extends StatelessWidget {
             description:
                 'Turn your available ingredients into gourmet masterpieces.',
             buttonText: 'Find Magic',
-            onPressed: () => _handleStartCreating(context),
+            onPressed: () => _handleKitchenTreasures(context),
             isMobile: true,
+            isHovering: _isHoveringKitchen,
+            onHoverChange: (hovering) => setState(() => _isHoveringKitchen = hovering),
           ),
         ],
       );
     }
     
-    // Side by side on desktop
     return Row(
       children: [
         Expanded(
@@ -256,6 +390,8 @@ class LandingPage extends StatelessWidget {
             buttonText: 'Start Creating',
             onPressed: () => _handleStartCreating(context),
             isMobile: false,
+            isHovering: _isHoveringRecipe,
+            onHoverChange: (hovering) => setState(() => _isHoveringRecipe = hovering),
           ),
         ),
         const SizedBox(width: 24),
@@ -267,8 +403,10 @@ class LandingPage extends StatelessWidget {
             description:
                 'Turn your available ingredients into gourmet masterpieces.',
             buttonText: 'Find Magic',
-            onPressed: () => _handleStartCreating(context),
+            onPressed: () => _handleKitchenTreasures(context),
             isMobile: false,
+            isHovering: _isHoveringKitchen,
+            onHoverChange: (hovering) => setState(() => _isHoveringKitchen = hovering),
           ),
         ),
       ],
@@ -283,100 +421,165 @@ class LandingPage extends StatelessWidget {
     required String buttonText,
     required VoidCallback onPressed,
     required bool isMobile,
+    required bool isHovering,
+    required ValueChanged<bool> onHoverChange,
   }) {
-    return Container(
-      padding: EdgeInsets.all(isMobile ? 24 : 32),
-      decoration: BoxDecoration(
-        color: AppTheme.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: AppTheme.primaryGreen.withOpacity(0.2),
+    // Determine if this is the recipe or kitchen card
+    bool isRecipeCard = title == 'Generate Recipe';
+    
+    return MouseRegion(
+      onEnter: (_) => onHoverChange(true),
+      onExit: (_) => onHoverChange(false),
+      cursor: SystemMouseCursors.click,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        padding: EdgeInsets.all(isMobile ? 24 : 32),
+        transform: Matrix4.translationValues(0, isHovering ? -8 : 0, 0),
+        decoration: BoxDecoration(
+          color: AppTheme.cardBackground,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: isHovering
+                ? AppTheme.primaryGreen.withOpacity(0.6)
+                : AppTheme.primaryGreen.withOpacity(0.2),
+            width: isHovering ? 2 : 1,
+          ),
+          boxShadow: isHovering
+              ? [
+                  BoxShadow(
+                    color: AppTheme.primaryGreen.withOpacity(0.3),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : [],
+        ),
+        child: Column(
+          children: [
+            AnimatedScale(
+              scale: isHovering ? 1.1 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: _buildAnimatedIcon(icon, isMobile, isRecipeCard),
+            ),
+            SizedBox(height: isMobile ? 16 : 24),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: isMobile ? 20 : 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: isMobile ? 12 : 16),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: isMobile ? 12 : 14,
+                color: AppTheme.greyText,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: isMobile ? 24 : 32),
+            AnimatedScale(
+              scale: isHovering ? 1.05 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: ElevatedButton(
+                onPressed: onPressed,
+                child: Text(buttonText),
+              ),
+            ),
+          ],
         ),
       ),
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            size: isMobile ? 48 : 64,
-            color: AppTheme.primaryGreen,
-          ),
-          SizedBox(height: isMobile ? 16 : 24),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: isMobile ? 20 : 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: isMobile ? 12 : 16),
-          Text(
-            description,
-            style: TextStyle(
-              fontSize: isMobile ? 12 : 14,
-              color: AppTheme.greyText,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: isMobile ? 24 : 32),
-          ElevatedButton(
-            onPressed: onPressed,
-            child: Text(buttonText),
-          ),
-        ],
-      ),
+    );
+  }
+
+  Widget _buildAnimatedIcon(IconData icon, bool isMobile, bool isRecipeCard) {
+    return Icon(
+      icon,
+      size: isMobile ? 48 : 64,
+      color: AppTheme.primaryGreen,
     );
   }
 
   Widget _buildFooter(bool isMobile) {
     if (isMobile) {
-      // Stack footer items vertically on mobile
-      return Column(
+      return const Column(
         children: [
-          _buildFooterItem('TRENDING: TRUFFLE INFUSION'),
-          const SizedBox(height: 16),
-          _buildFooterItem('ANALYTICS: 98% TASTE MATCH'),
-          const SizedBox(height: 16),
-          _buildFooterItem('CHEF INSIGHTS: SEARING MASTERY'),
+          _FooterItem(text: 'TRENDING: TRUFFLE INFUSION'),
+          SizedBox(height: 16),
+          _FooterItem(text: 'ANALYTICS: 98% TASTE MATCH'),
+          SizedBox(height: 16),
+          _FooterItem(text: 'CHEF INSIGHTS: SEARING MASTERY'),
         ],
       );
     }
     
-    // Horizontal layout for desktop
-    return Row(
+    return const Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _buildFooterItem('TRENDING: TRUFFLE INFUSION'),
-        const SizedBox(width: 32),
-        _buildFooterItem('ANALYTICS: 98% TASTE MATCH'),
-        const SizedBox(width: 32),
-        _buildFooterItem('CHEF INSIGHTS: SEARING MASTERY'),
+        _FooterItem(text: 'TRENDING: TRUFFLE INFUSION'),
+        SizedBox(width: 32),
+        _FooterItem(text: 'ANALYTICS: 98% TASTE MATCH'),
+        SizedBox(width: 32),
+        _FooterItem(text: 'CHEF INSIGHTS: SEARING MASTERY'),
       ],
     );
   }
+}
 
-  Widget _buildFooterItem(String text) {
+class _FooterItem extends StatelessWidget {
+  final String text;
+  
+  const _FooterItem({required this.text});
+  
+  @override
+  Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 4,
-          height: 4,
-          decoration: const BoxDecoration(
-            color: AppTheme.primaryGreen,
-            shape: BoxShape.circle,
-          ),
-        ),
+        const _GreenDot(),
         const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 11,
-            color: AppTheme.greyText,
-            letterSpacing: 1.0,
-          ),
-        ),
+        _FooterText(text: text),
       ],
+    );
+  }
+}
+
+class _GreenDot extends StatelessWidget {
+  const _GreenDot();
+  
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 4,
+      height: 4,
+      decoration: const BoxDecoration(
+        color: AppTheme.primaryGreen,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+}
+
+class _FooterText extends StatelessWidget {
+  final String text;
+  
+  const _FooterText({required this.text});
+  
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        color: AppTheme.greyText,
+        letterSpacing: 1.0,
+      ),
     );
   }
 }

@@ -101,7 +101,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         ),
         const SizedBox(height: 24),
         const Text(
-          'GourmetAI',
+          'FoodGeniusAI',
           style: TextStyle(
             fontSize: 36,
             fontWeight: FontWeight.bold,
@@ -154,7 +154,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
             controller: _emailController,
             decoration: const InputDecoration(
               labelText: 'Email',
-              hintText: 'admin@gourmetai.com',
+              hintText: 'admin@foodgeniusai.com',
               prefixIcon: Icon(Icons.email_outlined, color: AppTheme.greyText),
             ),
           ),
@@ -225,65 +225,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
             ),
           ),
           const SizedBox(height: 24),
-          const Divider(color: AppTheme.greyText),
-          const SizedBox(height: 16),
-          Center(
-            child: Column(
-              children: [
-                const Text(
-                  'First time setup?',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.greyText,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _isCreatingAdmin ? null : _createAdminAccount,
-                  icon: _isCreatingAdmin
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppTheme.primaryGreen,
-                          ),
-                        )
-                      : const Icon(Icons.add_moderator, size: 18),
-                  label: Text(_isCreatingAdmin ? 'Creating...' : 'Create Admin Account'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.primaryGreen,
-                    side: const BorderSide(color: AppTheme.primaryGreen),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Email: admin@gourmetai.com\nPassword: Admin123456',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.greyText,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/fix-admin');
-                  },
-                  icon: const Icon(Icons.build, size: 16, color: Colors.orange),
-                  label: const Text(
-                    'Having login issues? Click here to fix',
-                    style: TextStyle(color: Colors.orange, fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

@@ -7,10 +7,12 @@ import '../utils/url_launcher_helper.dart' as url_helper;
 
 class RecipeDetailPage extends StatefulWidget {
   final RecipeModel recipe;
+  final List<String>? missingIngredients;
 
   const RecipeDetailPage({
     super.key,
     required this.recipe,
+    this.missingIngredients,
   });
 
   @override
@@ -52,12 +54,12 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
       // Pinterest share URL format
       final imageUrl = Uri.encodeComponent(widget.recipe.imageUrl!);
       final description = Uri.encodeComponent(
-        '${widget.recipe.title} - Delicious recipe created with GourmetAI'
+        '${widget.recipe.title} - Delicious recipe created with FoodGeniusAI'
       );
       
       // Construct Pinterest share URL
       final pinterestUrl = 'https://www.pinterest.com/pin/create/button/'
-          '?url=${Uri.encodeComponent('https://gourmetai.com')}'
+          '?url=${Uri.encodeComponent('https://foodgeniusai.com')}'
           '&media=$imageUrl'
           '&description=$description';
 
@@ -101,9 +103,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
       }
 
       // Facebook share URL format
-      final shareUrl = Uri.encodeComponent('https://gourmetai.com');
+      final shareUrl = Uri.encodeComponent('https://foodgeniusai.com');
       final quote = Uri.encodeComponent(
-        '${widget.recipe.title} - Delicious recipe created with GourmetAI'
+        '${widget.recipe.title} - Delicious recipe created with FoodGeniusAI'
       );
       
       // Construct Facebook share URL
@@ -145,6 +147,8 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             children: [
               _buildHeader(context),
               _buildNutrition(),
+              if (widget.missingIngredients != null && widget.missingIngredients!.isNotEmpty)
+                _buildMissingIngredients(),
               _buildIngredients(),
               _buildInstructions(),
               const SizedBox(height: 40),
@@ -470,6 +474,100 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMissingIngredients() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.shopping_basket,
+                color: Colors.orange,
+                size: 24,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Missing Ingredients',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You\'ll need to get these ${widget.missingIngredients!.length} ingredient${widget.missingIngredients!.length > 1 ? 's' : ''}',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppTheme.greyText,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.orange.withOpacity(0.3),
+                width: 2,
+              ),
+            ),
+            child: Column(
+              children: List.generate(
+                widget.missingIngredients!.length,
+                (index) {
+                  final ingredient = widget.missingIngredients![index];
+                  
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            border: Border.all(
+                              color: Colors.orange,
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Icon(
+                            Icons.shopping_cart,
+                            color: Colors.orange,
+                            size: 14,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            ingredient,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
     );
   }
 
