@@ -7,6 +7,7 @@ import 'admin_payments_page.dart';
 import 'admin_recipes_page.dart';
 import 'admin_analytics_page.dart';
 import 'admin_settings_page.dart';
+import 'admin_seo_settings_page.dart';
 import 'database_seeder_page.dart';
 import '../../services/firestore_service.dart';
 import '../../models/user_model.dart';
@@ -29,8 +30,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
     const AdminPaymentsPage(),
     const AdminApiSettingsPage(),
     const AdminAnalyticsPage(),
+    const AdminSeoSettingsPage(),
     const AdminSettingsPage(),
-    const DatabaseSeederPage(), // Added seeder page
+    const DatabaseSeederPage(),
   ];
 
   @override
@@ -64,9 +66,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 _buildMenuItem(3, Icons.payment, 'Payments'),
                 _buildMenuItem(4, Icons.api, 'API Settings'),
                 _buildMenuItem(5, Icons.analytics, 'Analytics'),
+                _buildMenuItem(6, Icons.search, 'SEO Settings'),
                 const Divider(color: AppTheme.greyText, height: 32),
-                _buildMenuItem(7, Icons.cloud_upload, 'Database Seeder'),
-                _buildMenuItem(6, Icons.settings, 'Settings'),
+                _buildMenuItem(8, Icons.cloud_upload, 'Database Seeder'),
+                _buildMenuItem(7, Icons.settings, 'Settings'),
                 _buildMenuItem(-2, Icons.logout, 'Logout'),
               ],
             ),
