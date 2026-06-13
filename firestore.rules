@@ -1,0 +1,33 @@
+// Firestore security rules.
+//
+// This file opts the single `admin_settings/app_settings` document into
+// PUBLIC READ so that unauthenticated visitors can fetch the favicon URL +
+// faviconUpdatedAt timestamp used by the inline bootstrap script in
+// web/index.html. That document only ever contains global branding metadata
+// (favicon URL, app name, etc.) — nothing sensitive.
+//
+// Writes still require auth; the admin UI enforces admin role on top.
+//
+// If you already have custom rules elsewhere, merge the admin_settings match
+// block into your existing rules instead of replacing this file wholesale.
+//
+// Deploy with:
+//   firebase deploy --only firestore:rules
+//
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Publicly-readable branding metadata (favicon URL, app name, etc.).
+    match /admin_settings/app_settings {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Everything else: authenticated users only. Tighten per-collection
+    // as your product needs.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

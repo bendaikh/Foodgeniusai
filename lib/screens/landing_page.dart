@@ -21,37 +21,19 @@ class _LandingPageState extends State<LandingPage> {
   bool _isHoveringKitchen = false;
 
   void _handleStartCreating(BuildContext context) {
-    final authService = AuthService();
-    final user = authService.currentUser;
-    
-    if (user != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const RecipeFormPage()),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const UserAuthPage()),
-      );
-    }
+    // Allow both logged-in and guest users to access recipe generation
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const RecipeFormPage()),
+    );
   }
 
   void _handleKitchenTreasures(BuildContext context) {
-    final authService = AuthService();
-    final user = authService.currentUser;
-    
-    if (user != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const KitchenTreasuresPage()),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const UserAuthPage()),
-      );
-    }
+    // Allow both logged-in and guest users to access kitchen treasures
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const KitchenTreasuresPage()),
+    );
   }
 
   @override

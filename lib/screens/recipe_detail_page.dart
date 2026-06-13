@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:ui';
 import '../theme/app_theme.dart';
 import '../widgets/web_image.dart';
 import '../models/recipe_model.dart';
 import '../utils/url_launcher_helper.dart' as url_helper;
+import '../services/auth_service.dart';
+import 'user_auth_page.dart';
 
 class RecipeDetailPage extends StatefulWidget {
   final RecipeModel recipe;
@@ -22,10 +25,13 @@ class RecipeDetailPage extends StatefulWidget {
 class _RecipeDetailPageState extends State<RecipeDetailPage> {
   late Map<int, bool> _checkedIngredients;
   late Map<int, bool> _checkedInstructions;
+  final AuthService _authService = AuthService();
+  bool _isLoggedIn = false;
 
   @override
   void initState() {
     super.initState();
+    _checkAuthStatus();
     // Initialize all ingredients as unchecked
     _checkedIngredients = {
       for (var i = 0; i < widget.recipe.ingredients.length; i++) i: false
@@ -34,6 +40,12 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     _checkedInstructions = {
       for (var i = 0; i < widget.recipe.instructions.length; i++) i: false
     };
+  }
+
+  void _checkAuthStatus() {
+    setState(() {
+      _isLoggedIn = _authService.currentUser != null;
+    });
   }
 
   void _shareOnPinterest(BuildContext context) async {
@@ -334,40 +346,90 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              _buildNutritionCard('Calories', '450', 'kcal'),
-              const SizedBox(width: 12),
-              _buildNutritionCard('Protein', '40g', 'grams'),
-              const SizedBox(width: 12),
-              _buildNutritionCard('Carbs', '70g', 'grams'),
-              const SizedBox(width: 12),
-              _buildNutritionCard('Fats', '25g', 'grams'),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppTheme.cardBackground,
-              borderRadius: BorderRadius.circular(16),
+          // Description - always visible
+          if (widget.recipe.description.isNotEmpty) ...[
+            Text(
+              widget.recipe.description,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppTheme.greyText,
+                height: 1.5,
+              ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildMacroIndicator('Protein', 0.4, Colors.blue),
-                _buildMacroIndicator('Carbs', 0.35, Colors.orange),
-                _buildMacroIndicator('Fats', 0.25, Colors.pink),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 24),
+          ],
+          // Time info - always visible for everyone
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildTimeInfo(Icons.access_time, 'Prep', '15 min'),
-              _buildTimeInfo(Icons.restaurant, 'Cook', '15 min'),
-              _buildTimeInfo(Icons.calendar_today, 'Total', '30 min'),
+              _buildTimeInfo(Icons.access_time, 'Prep', '${widget.recipe.prepTime} min'),
+              _buildTimeInfo(Icons.restaurant, 'Cook', '${widget.recipe.cookTime} min'),
+              _buildTimeInfo(Icons.calendar_today, 'Total', '${widget.recipe.totalTime} min'),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Nutrition cards - blurred for guests
+          Stack(
+            children: [
+              Row(
+                children: [
+                  _buildNutritionCard('Calories', '${widget.recipe.nutrition['calories'] ?? 450}', 'kcal'),
+                  const SizedBox(width: 12),
+                  _buildNutritionCard('Protein', '${widget.recipe.nutrition['protein'] ?? 40}g', 'grams'),
+                  const SizedBox(width: 12),
+                  _buildNutritionCard('Carbs', '${widget.recipe.nutrition['carbs'] ?? 70}g', 'grams'),
+                  const SizedBox(width: 12),
+                  _buildNutritionCard('Fats', '${widget.recipe.nutrition['fat'] ?? 25}g', 'grams'),
+                ],
+              ),
+              if (!_isLoggedIn)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        color: AppTheme.darkBackground.withOpacity(0.7),
+                        child: Center(
+                          child: _buildLoginPrompt('nutrition details'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // Macro indicators - blurred for guests
+          Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildMacroIndicator('Protein', 0.4, Colors.blue),
+                    _buildMacroIndicator('Carbs', 0.35, Colors.orange),
+                    _buildMacroIndicator('Fats', 0.25, Colors.pink),
+                  ],
+                ),
+              ),
+              if (!_isLoggedIn)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        color: AppTheme.darkBackground.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ],
@@ -586,75 +648,94 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             ),
           ),
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppTheme.cardBackground,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppTheme.primaryGreen.withOpacity(0.2),
-              ),
-            ),
-            child: Column(
-              children: List.generate(
-                widget.recipe.ingredients.length,
-                (index) {
-                  final ingredient = widget.recipe.ingredients[index];
-                  final isChecked = _checkedIngredients[index] ?? false;
-                  
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8.0),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _checkedIngredients[index] = !isChecked;
-                            });
-                          },
-                          child: Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: isChecked
-                                  ? AppTheme.primaryGreen
-                                  : Colors.transparent,
-                              border: Border.all(
-                                color: AppTheme.primaryGreen,
-                                width: 2,
+          Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBackground,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppTheme.primaryGreen.withOpacity(0.2),
+                  ),
+                ),
+                child: Column(
+                  children: List.generate(
+                    widget.recipe.ingredients.length,
+                    (index) {
+                      final ingredient = widget.recipe.ingredients[index];
+                      final isChecked = _checkedIngredients[index] ?? false;
+                      
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Row(
+                          children: [
+                            GestureDetector(
+                              onTap: _isLoggedIn ? () {
+                                setState(() {
+                                  _checkedIngredients[index] = !isChecked;
+                                });
+                              } : null,
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: isChecked
+                                      ? AppTheme.primaryGreen
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: AppTheme.primaryGreen,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: isChecked
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 16,
+                                      )
+                                    : null,
                               ),
-                              borderRadius: BorderRadius.circular(6),
                             ),
-                            child: isChecked
-                                ? const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 16,
-                                  )
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(
-                            '${ingredient['amount']} ${ingredient['unit']} ${ingredient['name']}',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: isChecked
-                                  ? AppTheme.greyText
-                                  : Colors.white,
-                              decoration: isChecked
-                                  ? TextDecoration.lineThrough
-                                  : TextDecoration.none,
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Text(
+                                '${ingredient['amount']} ${ingredient['unit']} ${ingredient['name']}',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: isChecked
+                                      ? AppTheme.greyText
+                                      : Colors.white,
+                                  decoration: isChecked
+                                      ? TextDecoration.lineThrough
+                                      : TextDecoration.none,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                },
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
+              if (!_isLoggedIn)
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      child: Container(
+                        color: AppTheme.darkBackground.withOpacity(0.7),
+                        child: Center(
+                          child: _buildLoginPromptCompact('ingredients'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 32),
         ],
@@ -687,11 +768,11 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: GestureDetector(
-                onTap: () {
+                onTap: _isLoggedIn ? () {
                   setState(() {
                     _checkedInstructions[index] = !isChecked;
                   });
-                },
+                } : null,
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
@@ -761,6 +842,166 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
               ),
             );
           }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoginPrompt(String contentType) {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.lock_outline,
+              color: AppTheme.primaryGreen,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'Sign in to view $contentType',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserAuthPage(isLogin: true),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryGreen,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text(
+                'Login',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserAuthPage(isLogin: false),
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppTheme.primaryGreen, width: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: const Text(
+                'Sign Up',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primaryGreen,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoginPromptCompact(String contentType) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.lock_outline,
+            color: AppTheme.primaryGreen,
+            size: 40,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Sign in to view $contentType',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Create a free account to unlock full recipes',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppTheme.greyText,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const UserAuthPage(isLogin: true),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryGreen,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                ),
+                child: const Text(
+                  'Login',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const UserAuthPage(isLogin: false),
+                    ),
+                  );
+                },
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.primaryGreen, width: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                ),
+                child: const Text(
+                  'Sign Up',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryGreen,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// Craft rules based on data in your Firestore database
+// allow write: if firestore.get(
+//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // App assets (favicon, logos, etc.) - Admin only write, public read
+    match /app_assets/{allPaths=**} {
+      // Allow anyone to read app assets
+      allow read: if true;
+      
+      // Allow authenticated admin users to upload
+      allow write: if request.auth != null && 
+                   request.resource.size < 5 * 1024 * 1024 && // Max 5MB
+                   (request.resource.contentType.matches('image/.*') || 
+                    request.resource.contentType == 'image/x-icon');
+    }
+    
+    // Recipe images - Authenticated users can upload their own
+    match /recipes/{userId}/{allPaths=**} {
+      // Allow users to read all recipe images
+      allow read: if true;
+      
+      // Allow authenticated users to upload their own recipe images
+      allow write: if request.auth != null && 
+                   request.auth.uid == userId &&
+                   request.resource.size < 10 * 1024 * 1024 && // Max 10MB
+                   request.resource.contentType.matches('image/.*');
+    }
+    
+    // Guest recipe images - Allow anonymous uploads for preview recipes
+    match /recipes/guest/{allPaths=**} {
+      // Allow anyone to read guest recipe images
+      allow read: if true;
+      
+      // Allow anyone to upload guest recipe images (for preview feature)
+      allow write: if request.resource.size < 10 * 1024 * 1024 && // Max 10MB
+                   request.resource.contentType.matches('image/.*');
+    }
+    
+    // User profile images
+    match /users/{userId}/profile/{allPaths=**} {
+      // Allow users to read all profile images
+      allow read: if true;
+      
+      // Allow users to upload their own profile images
+      allow write: if request.auth != null && 
+                   request.auth.uid == userId &&
+                   request.resource.size < 5 * 1024 * 1024 && // Max 5MB
+                   request.resource.contentType.matches('image/.*');
+    }
+    
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

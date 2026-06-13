@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../models/recipe_model.dart';
 import '../widgets/cooking_animation.dart';
 import 'my_creations_page.dart';
+import 'recipe_detail_page.dart';
 
 class RecipeFormPage extends StatefulWidget {
   const RecipeFormPage({super.key});
@@ -88,30 +89,26 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         portionSize: _selectedPortion,
       );
 
-      // Get current user first (before image generation)
+      // Get current user (optional for non-logged-in users)
       final user = _authService.currentUser;
-      if (user == null) {
-        throw Exception('Please log in to save recipes');
-      }
 
-      // Generate realistic food image
+      // Generate realistic food image for ALL users (including guests)
       String? imageUrl;
       try {
         imageUrl = await openaiService.generateRecipeImage(
           recipe.title,
           'Professional food photography, high quality, well-lit, appetizing ${recipe.cuisine} cuisine dish, restaurant presentation, realistic, natural lighting, detailed texture',
-          userId: user.uid, // Pass user ID to save image permanently
+          userId: user?.uid ?? 'guest',
         );
         print('✅ Image generated: $imageUrl');
       } catch (e) {
         print('⚠️ Image generation failed: $e');
-        // Continue without image if it fails
       }
 
-      // Update recipe with user ID, image, and calculate totalTime
+      // Update recipe with user ID (if logged in), image, and calculate totalTime
       final recipeWithUser = RecipeModel(
         id: recipe.id,
-        userId: user.uid,
+        userId: user?.uid ?? 'guest',
         title: recipe.title,
         description: recipe.description,
         cuisine: recipe.cuisine,
@@ -125,42 +122,86 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         instructions: recipe.instructions,
         dietary: recipe.dietary,
         nutrition: recipe.nutrition,
-        imageUrl: imageUrl, // Add the generated image
+        imageUrl: imageUrl,
         createdAt: recipe.createdAt,
       );
-
-      // Save to Firestore
-      await _firestoreService.createRecipe(recipeWithUser);
 
       if (mounted) {
         // Close the cooking animation dialog
         Navigator.of(context).pop();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    imageUrl != null 
-                      ? 'Recipe and image generated successfully!' 
-                      : 'Recipe generated! (Image generation skipped)',
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
 
-        // Navigate to My Creations
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MyCreationsPage()),
-        );
+        // If user is logged in, save to Firestore
+        if (user != null) {
+          try {
+            await _firestoreService.createRecipe(recipeWithUser);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.white),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        imageUrl != null 
+                          ? 'Recipe and image generated successfully!' 
+                          : 'Recipe generated! (Image generation skipped)',
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+
+            // Navigate to My Creations
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MyCreationsPage()),
+            );
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Recipe generated but not saved: ${e.toString()}'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+            
+            // Still show the recipe even if save failed
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RecipeDetailPage(recipe: recipeWithUser),
+              ),
+            );
+          }
+        } else {
+          // User is not logged in - show recipe with limited access
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.visibility_off, color: Colors.white),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Recipe preview generated! Sign in to see full details.'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+
+          // Navigate to recipe detail (which will show blurred content)
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RecipeDetailPage(recipe: recipeWithUser),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
