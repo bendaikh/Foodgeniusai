@@ -56,6 +56,17 @@ class _PricingPageState extends State<PricingPage> {
     try {
       final checkoutUrl = await _checkoutService.startCheckout(tier: tier);
       await redirectToCheckout(checkoutUrl);
+      if (!mounted) return;
+      setState(() => _loadingTier = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Complete payment in your browser, then return to the app to view your unlocked recipe.',
+          ),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: Duration(seconds: 5),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {

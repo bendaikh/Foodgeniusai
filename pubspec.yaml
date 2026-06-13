@@ -51,6 +51,7 @@ dependencies:
   
   # URL Launcher for external links
   url_launcher: ^6.2.5
+  shared_preferences: ^2.5.3
   
   # Lottie Animations
   lottie: ^3.1.0

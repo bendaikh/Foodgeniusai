@@ -12,7 +12,8 @@ class CheckoutService {
       throw Exception('Please sign in before choosing a paid plan.');
     }
 
-    final origin = kIsWeb ? Uri.base.origin : 'https://foodgeniusai.com';
+    final origin =
+        kIsWeb ? Uri.base.origin : 'https://gourmetai-c432b.web.app';
 
     try {
       final result = await _functions.httpsCallable('createUserCheckout').call({

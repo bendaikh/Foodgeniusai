@@ -887,8 +887,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
         : _buildLoginPrompt(contentType);
   }
 
-  void _openPricingPage() {
-    PendingRecipeStore.instance.save(widget.recipe);
+  Future<void> _openPricingPage() async {
+    await PendingRecipeStore.instance.save(widget.recipe);
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(
