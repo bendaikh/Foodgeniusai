@@ -94,4 +94,57 @@ class RecipeModel {
       'isPublic': isPublic,
     };
   }
+
+  /// JSON for session storage (payment redirect flow).
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      'userId': userId,
+      'title': title,
+      'description': description,
+      'ingredients': ingredients,
+      'instructions': instructions,
+      'nutrition': nutrition,
+      'difficulty': difficulty,
+      'prepTime': prepTime,
+      'cookTime': cookTime,
+      'totalTime': totalTime,
+      'servings': servings,
+      'cuisine': cuisine,
+      'mealType': mealType,
+      'dietary': dietary,
+      'imageUrl': imageUrl,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      'views': views,
+      'saves': saves,
+      'isPublic': isPublic,
+    };
+  }
+
+  factory RecipeModel.fromJson(Map<String, dynamic> json) {
+    return RecipeModel(
+      id: json['id'] as String?,
+      userId: json['userId'] as String? ?? 'guest',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      ingredients: List<Map<String, dynamic>>.from(json['ingredients'] ?? []),
+      instructions: List<Map<String, dynamic>>.from(json['instructions'] ?? []),
+      nutrition: Map<String, dynamic>.from(json['nutrition'] ?? {}),
+      difficulty: json['difficulty'] as String? ?? 'intermediate',
+      prepTime: (json['prepTime'] as num?)?.toInt() ?? 0,
+      cookTime: (json['cookTime'] as num?)?.toInt() ?? 0,
+      totalTime: (json['totalTime'] as num?)?.toInt() ?? 0,
+      servings: (json['servings'] as num?)?.toInt() ?? 2,
+      cuisine: json['cuisine'] as String? ?? '',
+      mealType: json['mealType'] as String? ?? '',
+      dietary: List<String>.from(json['dietary'] ?? []),
+      imageUrl: json['imageUrl'] as String?,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'] as String)
+          : null,
+      views: (json['views'] as num?)?.toInt() ?? 0,
+      saves: (json['saves'] as num?)?.toInt() ?? 0,
+      isPublic: json['isPublic'] as bool? ?? true,
+    );
+  }
 }

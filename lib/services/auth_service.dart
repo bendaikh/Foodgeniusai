@@ -11,6 +11,34 @@ class AuthService {
   // Get current user stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
+  /// True when the user has a real (non-anonymous) account.
+  bool get isAuthenticatedUser {
+    final user = currentUser;
+    return user != null && !user.isAnonymous;
+  }
+
+  /// Whether the user has an active paid subscription (pro or elite).
+  bool hasPaidSubscription(Map<String, dynamic>? userData) {
+    if (userData == null) return false;
+    final tier = userData['subscriptionTier'] as String? ?? 'free';
+    final status = userData['subscriptionStatus'] as String? ?? 'active';
+    return status == 'active' && (tier == 'pro' || tier == 'elite');
+  }
+
+  /// Live stream of the signed-in user's Firestore profile (null for guests).
+  Stream<Map<String, dynamic>?> get userProfileStream {
+    return authStateChanges.asyncExpand((user) {
+      if (user == null || user.isAnonymous) {
+        return Stream.value(null);
+      }
+      return _firestore
+          .collection('users')
+          .doc(user.uid)
+          .snapshots()
+          .map((doc) => doc.exists ? doc.data() : null);
+    });
+  }
+
   /// Ensures the user is authenticated before recipe generation.
   /// Guests are signed in anonymously so Firestore can load AI settings.
   Future<User> ensureAuthForRecipeGeneration() async {
@@ -59,10 +87,21 @@ class AuthService {
     required String name,
   }) async {
     try {
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final UserCredential result;
+      final anonymousUser = _auth.currentUser;
+
+      if (anonymousUser != null && anonymousUser.isAnonymous) {
+        final credential = EmailAuthProvider.credential(
+          email: email,
+          password: password,
+        );
+        result = await anonymousUser.linkWithCredential(credential);
+      } else {
+        result = await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
 
       // Create user document in Firestore
       await _firestore.collection('users').doc(result.user!.uid).set({
@@ -75,7 +114,7 @@ class AuthService {
         'totalRecipesGenerated': 0,
         'apiUsageCount': 0,
         'role': 'user',
-      });
+      }, SetOptions(merge: true));
 
       return result;
     } on FirebaseAuthException catch (e) {

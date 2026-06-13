@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../admin/screens/admin_dashboard.dart';
+import '../admin/screens/admin_dashboard_export.dart';
 import '../screens/user_account_page.dart';
 import 'landing_page.dart';
 

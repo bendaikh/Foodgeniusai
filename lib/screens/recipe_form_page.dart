@@ -70,10 +70,7 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
     );
 
     try {
-      // Guests need anonymous auth to read AI settings from Firestore.
-      final user = await _authService.ensureAuthForRecipeGeneration();
-
-      // Load AI settings
+      // Load AI settings first (public Firestore read — no sign-in required)
       final settings = await _settingsService.getSettings();
       
       if (settings.openaiApiKey == null || settings.openaiApiKey!.isEmpty) {
@@ -92,13 +89,15 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         portionSize: _selectedPortion,
       );
 
+      final user = _authService.currentUser;
+
       // Generate realistic food image for ALL users (including guests)
       String? imageUrl;
       try {
         imageUrl = await openaiService.generateRecipeImage(
           recipe.title,
           'Professional food photography, high quality, well-lit, appetizing ${recipe.cuisine} cuisine dish, restaurant presentation, realistic, natural lighting, detailed texture',
-          userId: user.isAnonymous ? 'guest' : user.uid,
+          userId: user == null || user.isAnonymous ? 'guest' : user.uid,
         );
         print('✅ Image generated: $imageUrl');
       } catch (e) {
@@ -108,7 +107,7 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
       // Update recipe with user ID (if logged in), image, and calculate totalTime
       final recipeWithUser = RecipeModel(
         id: recipe.id,
-        userId: user.isAnonymous ? 'guest' : user.uid,
+        userId: user == null || user.isAnonymous ? 'guest' : user.uid,
         title: recipe.title,
         description: recipe.description,
         cuisine: recipe.cuisine,
@@ -130,8 +129,8 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         // Close the cooking animation dialog
         Navigator.of(context).pop();
 
-        // Save to Firestore only for registered users (not anonymous guests)
-        if (!user.isAnonymous) {
+        // Save to Firestore only for registered users (not guests)
+        if (user != null && !user.isAnonymous) {
           try {
             await _firestoreService.createRecipe(recipeWithUser);
             ScaffoldMessenger.of(context).showSnackBar(

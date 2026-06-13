@@ -36,8 +36,8 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyClG1zFNb6sflC0yKO-Mmbawqq6ReqazpI',
-    appId: '1:34406437215:web:d048bd8775c66ce435a89e',
-    messagingSenderId: '34406437215',
+    appId: '1:344064372155:web:d048bd8775c66ce435a89e',
+    messagingSenderId: '344064372155',
     projectId: 'gourmetai-c432b',
     authDomain: 'gourmetai-c432b.firebaseapp.com',
     storageBucket: 'gourmetai-c432b.firebasestorage.app',
@@ -45,11 +45,10 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyClG1zFNb6sflC0yKO-Mmbawqq6ReqazpI',
-    appId: '1:34406437215:android:XXXXX',
-    messagingSenderId: '34406437215',
+    apiKey: 'AIzaSyCCmVcmaR9C-FRJz_B2MlfcgNG-WemFQQU',
+    appId: '1:344064372155:android:0939560f6082ec3035a89e',
+    messagingSenderId: '344064372155',
     projectId: 'gourmetai-c432b',
-    authDomain: 'gourmetai-c432b.firebaseapp.com',
     storageBucket: 'gourmetai-c432b.firebasestorage.app',
   );
 

@@ -6,6 +6,8 @@ import '../widgets/web_image.dart';
 import '../models/recipe_model.dart';
 import '../utils/url_launcher_helper.dart' as url_helper;
 import '../services/auth_service.dart';
+import '../services/pending_recipe_store.dart';
+import 'pricing_page.dart';
 import 'user_auth_page.dart';
 
 class RecipeDetailPage extends StatefulWidget {
@@ -26,27 +28,20 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   late Map<int, bool> _checkedIngredients;
   late Map<int, bool> _checkedInstructions;
   final AuthService _authService = AuthService();
-  bool _isLoggedIn = false;
 
   @override
   void initState() {
     super.initState();
-    _checkAuthStatus();
-    // Initialize all ingredients as unchecked
     _checkedIngredients = {
       for (var i = 0; i < widget.recipe.ingredients.length; i++) i: false
     };
-    // Initialize all instructions as unchecked
     _checkedInstructions = {
       for (var i = 0; i < widget.recipe.instructions.length; i++) i: false
     };
   }
 
-  void _checkAuthStatus() {
-    setState(() {
-      _isLoggedIn = _authService.currentUser != null;
-    });
-  }
+  bool _isAuthenticated = false;
+  bool _hasFullAccess = false;
 
   void _shareOnPinterest(BuildContext context) async {
     try {
@@ -151,23 +146,34 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              _buildNutrition(),
-              if (widget.missingIngredients != null && widget.missingIngredients!.isNotEmpty)
-                _buildMissingIngredients(),
-              _buildIngredients(),
-              _buildInstructions(),
-              const SizedBox(height: 40),
-            ],
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: _authService.userProfileStream,
+      builder: (context, profileSnapshot) {
+        final user = _authService.currentUser;
+        _isAuthenticated = user != null && !user.isAnonymous;
+        _hasFullAccess =
+            _isAuthenticated && _authService.hasPaidSubscription(profileSnapshot.data);
+
+        return Scaffold(
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(context),
+                  _buildNutrition(),
+                  if (widget.missingIngredients != null &&
+                      widget.missingIngredients!.isNotEmpty)
+                    _buildMissingIngredients(),
+                  _buildIngredients(),
+                  _buildInstructions(),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -382,20 +388,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                   _buildNutritionCard('Fats', '${widget.recipe.nutrition['fat'] ?? 25}g', 'grams'),
                 ],
               ),
-              if (!_isLoggedIn)
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        color: AppTheme.darkBackground.withOpacity(0.7),
-                        child: Center(
-                          child: _buildLoginPrompt('nutrition details'),
-                        ),
-                      ),
-                    ),
-                  ),
+              if (!_hasFullAccess)
+                _buildPaywallOverlay(
+                  borderRadius: 16,
+                  child: _buildPaywallPrompt('nutrition details', compact: false),
                 ),
             ],
           ),
@@ -418,18 +414,8 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                   ],
                 ),
               ),
-              if (!_isLoggedIn)
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                      child: Container(
-                        color: AppTheme.darkBackground.withOpacity(0.7),
-                      ),
-                    ),
-                  ),
-                ),
+              if (!_hasFullAccess)
+                _buildPaywallOverlay(borderRadius: 16),
             ],
           ),
         ],
@@ -671,7 +657,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                         child: Row(
                           children: [
                             GestureDetector(
-                              onTap: _isLoggedIn ? () {
+                              onTap: _hasFullAccess ? () {
                                 setState(() {
                                   _checkedIngredients[index] = !isChecked;
                                 });
@@ -720,20 +706,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                   ),
                 ),
               ),
-              if (!_isLoggedIn)
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      child: Container(
-                        color: AppTheme.darkBackground.withOpacity(0.7),
-                        child: Center(
-                          child: _buildLoginPromptCompact('ingredients'),
-                        ),
-                      ),
-                    ),
-                  ),
+              if (!_hasFullAccess)
+                _buildPaywallOverlay(
+                  borderRadius: 16,
+                  child: _buildPaywallPrompt('ingredients', compact: true),
                 ),
             ],
           ),
@@ -758,7 +734,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             ),
           ),
           const SizedBox(height: 16),
-          ...widget.recipe.instructions.asMap().entries.map((entry) {
+          Stack(
+            children: [
+              Column(
+                children: widget.recipe.instructions.asMap().entries.map((entry) {
             final index = entry.key;
             final instruction = entry.value;
             final isChecked = _checkedInstructions[index] ?? false;
@@ -768,7 +747,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: GestureDetector(
-                onTap: _isLoggedIn ? () {
+                onTap: _hasFullAccess ? () {
                   setState(() {
                     _checkedInstructions[index] = !isChecked;
                   });
@@ -841,7 +820,185 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                 ),
               ),
             );
-          }),
+          }).toList(),
+              ),
+              if (!_hasFullAccess)
+                _buildPaywallOverlay(
+                  borderRadius: 16,
+                  minHeight: 280,
+                  child: _buildPaywallPrompt('instructions', compact: true),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaywallOverlay({
+    required double borderRadius,
+    Widget? child,
+    double? minHeight,
+  }) {
+    return Positioned.fill(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: Container(color: Colors.transparent),
+            ),
+            Container(
+              constraints: minHeight != null
+                  ? BoxConstraints(minHeight: minHeight)
+                  : null,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppTheme.darkBackground.withOpacity(0.25),
+                    AppTheme.darkBackground.withOpacity(0.55),
+                    AppTheme.darkBackground.withOpacity(0.88),
+                  ],
+                  stops: const [0.0, 0.45, 1.0],
+                ),
+              ),
+              child: child != null
+                  ? Center(child: child)
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaywallPrompt(String contentType, {required bool compact}) {
+    if (_isAuthenticated) {
+      return compact
+          ? _buildSubscribePromptCompact(contentType)
+          : _buildSubscribePrompt(contentType);
+    }
+    return compact
+        ? _buildLoginPromptCompact(contentType)
+        : _buildLoginPrompt(contentType);
+  }
+
+  void _openPricingPage() {
+    PendingRecipeStore.instance.save(widget.recipe);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PricingPage(returnRecipe: widget.recipe),
+      ),
+    );
+  }
+
+  Widget _buildSubscribePrompt(String contentType) {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.workspace_premium,
+              color: AppTheme.primaryGreen,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'Subscribe to view $contentType',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            ElevatedButton.icon(
+              onPressed: _openPricingPage,
+              icon: const Icon(Icons.lock_open, size: 18),
+              label: const Text(
+                'Subscribe to Unlock',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryGreen,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscribePromptCompact(String contentType) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryGreen.withOpacity(0.15),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppTheme.primaryGreen.withOpacity(0.4),
+              ),
+            ),
+            child: const Icon(
+              Icons.workspace_premium,
+              color: AppTheme.primaryGreen,
+              size: 36,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Subscribe to view full recipe',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Unlock $contentType and every premium feature',
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.greyText,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _openPricingPage,
+            icon: const Icon(Icons.lock_open, size: 18),
+            label: const Text(
+              'Subscribe to Unlock',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGreen,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+            ),
+          ),
         ],
       ),
     );
@@ -945,7 +1102,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Create a free account to unlock full recipes',
+            'Sign in to continue — subscribe to unlock the full recipe',
             style: TextStyle(
               fontSize: 13,
               color: AppTheme.greyText,

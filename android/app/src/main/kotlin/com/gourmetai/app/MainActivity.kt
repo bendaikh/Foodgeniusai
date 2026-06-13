@@ -1,4 +1,4 @@
-package com.example.gourmetai
+package com.gourmetai.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -19,6 +19,22 @@ class AISettingsModel {
     this.updatedAt,
   });
 
+  factory AISettingsModel.fromMap(Map<String, dynamic> data) {
+    return AISettingsModel(
+      provider: data['provider'] ?? 'OpenAI',
+      openaiApiKey: data['openaiApiKey'],
+      openaiModel: data['openaiModel'] ?? 'gpt-4o-mini',
+      maxTokens: data['maxTokens'] is int
+          ? data['maxTokens']
+          : int.tryParse('${data['maxTokens'] ?? 2000}'),
+      temperature: (data['temperature'] ?? 0.7) is double
+          ? (data['temperature'] as double)
+          : double.tryParse('${data['temperature'] ?? 0.7}') ?? 0.7,
+      imageProvider: data['imageProvider'] ?? 'DALL-E 3',
+      updatedAt: null,
+    );
+  }
+
   factory AISettingsModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return AISettingsModel(

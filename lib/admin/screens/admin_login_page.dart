@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_service.dart';
 import '../../services/admin_setup_service.dart';
-import 'admin_dashboard.dart';
+import 'admin_dashboard_export.dart';
 
 class AdminLoginPage extends StatefulWidget {
   const AdminLoginPage({super.key});

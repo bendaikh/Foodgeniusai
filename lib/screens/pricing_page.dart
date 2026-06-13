@@ -1,25 +1,174 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import 'recipe_form_page.dart';
-import 'kitchen_treasures_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class PricingPage extends StatelessWidget {
-  const PricingPage({super.key});
+import '../models/recipe_model.dart';
+import '../services/auth_service.dart';
+import '../services/checkout_service.dart';
+import '../services/pending_recipe_store.dart';
+import '../theme/app_theme.dart';
+import '../utils/checkout_redirect.dart';
+import 'user_auth_page.dart';
+
+class PricingPage extends StatefulWidget {
+  final RecipeModel? returnRecipe;
+
+  const PricingPage({super.key, this.returnRecipe});
+
+  @override
+  State<PricingPage> createState() => _PricingPageState();
+}
+
+class _PricingPageState extends State<PricingPage> {
+  final AuthService _authService = AuthService();
+  final CheckoutService _checkoutService = CheckoutService();
+  String? _loadingTier;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.returnRecipe != null) {
+      PendingRecipeStore.instance.save(widget.returnRecipe!);
+    }
+  }
+
+  Future<void> _startPaidCheckout(String tier) async {
+    if (!_authService.isAuthenticatedUser) {
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const UserAuthPage(isLogin: false),
+        ),
+      );
+      return;
+    }
+
+    if (widget.returnRecipe != null) {
+      await PendingRecipeStore.instance.save(widget.returnRecipe!);
+    }
+
+    setState(() {
+      _loadingTier = tier;
+      _errorMessage = null;
+    });
+
+    try {
+      final checkoutUrl = await _checkoutService.startCheckout(tier: tier);
+      await redirectToCheckout(checkoutUrl);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        _loadingTier = null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 900;
+
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: EdgeInsets.all(isMobile ? 16 : 24),
             child: Column(
               children: [
                 _buildHeader(context),
-                const SizedBox(height: 60),
+                const SizedBox(height: 32),
                 _buildTitle(),
-                const SizedBox(height: 60),
-                _buildPricingCards(context),
+                if (widget.returnRecipe != null) ...[
+                  const SizedBox(height: 16),
+                  _buildRecipeBanner(),
+                ],
+                const SizedBox(height: 40),
+                if (_errorMessage != null) ...[
+                  _buildErrorBanner(),
+                  const SizedBox(height: 24),
+                ],
+                isMobile
+                    ? Column(
+                        children: [
+                          _buildPricingCard(
+                            tier: 'pro',
+                            icon: '💎',
+                            title: 'Gourmet Pro',
+                            price: '\$12',
+                            period: '/ month',
+                            features: const [
+                              'Unlock full recipes instantly',
+                              'Ultra-realistic AI images',
+                              'Unlimited recipe portfolio',
+                            ],
+                            buttonText: 'Subscribe with DodoPayment',
+                            isPopular: true,
+                          ),
+                          const SizedBox(height: 20),
+                          _buildPricingCard(
+                            tier: 'elite',
+                            icon: '👑',
+                            title: 'Michelin Elite',
+                            price: '\$29',
+                            period: '/ month',
+                            features: const [
+                              'Everything in Pro',
+                              'Priority AI generation',
+                              'Premium recipe precision',
+                            ],
+                            buttonText: 'Go Elite',
+                            isPopular: false,
+                          ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _buildPricingCard(
+                              tier: 'pro',
+                              icon: '💎',
+                              title: 'Gourmet Pro',
+                              price: '\$12',
+                              period: '/ month',
+                              features: const [
+                                'Unlock full recipes instantly',
+                                'Ultra-realistic AI images',
+                                'Unlimited recipe portfolio',
+                              ],
+                              buttonText: 'Subscribe with DodoPayment',
+                              isPopular: true,
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: _buildPricingCard(
+                              tier: 'elite',
+                              icon: '👑',
+                              title: 'Michelin Elite',
+                              price: '\$29',
+                              period: '/ month',
+                              features: const [
+                                'Everything in Pro',
+                                'Priority AI generation',
+                                'Premium recipe precision',
+                              ],
+                              buttonText: 'Go Elite',
+                              isPopular: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                const SizedBox(height: 24),
+                Text(
+                  _authService.isAuthenticatedUser
+                      ? 'Signed in as ${FirebaseAuth.instance.currentUser?.email ?? 'your account'}'
+                      : 'Sign in first, then choose a plan to unlock your recipe.',
+                  style: const TextStyle(color: AppTheme.greyText, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 40),
               ],
             ),
@@ -36,6 +185,16 @@ class PricingPage extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back, color: Colors.white),
         ),
+        const Spacer(),
+        if (widget.returnRecipe != null)
+          TextButton.icon(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.restaurant_menu, color: AppTheme.primaryGreen),
+            label: const Text(
+              'Back to recipe preview',
+              style: TextStyle(color: AppTheme.primaryGreen),
+            ),
+          ),
       ],
     );
   }
@@ -44,7 +203,7 @@ class PricingPage extends StatelessWidget {
     return const Column(
       children: [
         Text(
-          'Select Your Culinary Experience',
+          'Choose Your Plan',
           style: TextStyle(
             fontSize: 36,
             fontWeight: FontWeight.bold,
@@ -54,7 +213,7 @@ class PricingPage extends StatelessWidget {
         ),
         SizedBox(height: 16),
         Text(
-          'Choose a plan to start your journey into elite AI cooking.',
+          'Pick a plan and pay securely with DodoPayment. After payment, you\'ll return to your generated recipe fully unlocked.',
           style: TextStyle(
             fontSize: 16,
             color: AppTheme.greyText,
@@ -65,75 +224,59 @@ class PricingPage extends StatelessWidget {
     );
   }
 
-  Widget _buildPricingCards(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _buildPricingCard(
-            context,
-            icon: '🌱',
-            title: 'Free Tier',
-            price: '\$0',
-            period: '/ year',
-            features: [
-              'Basic Recipes',
-              'Standard Quality Images',
-              'Limited History',
-            ],
-            buttonText: 'Choose Free',
-            isPopular: false,
-            onPressed: () {
-              _showFeatureSelection(context);
-            },
+  Widget _buildRecipeBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryGreen.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_open, color: AppTheme.primaryGreen),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Subscribe to unlock "${widget.returnRecipe!.title}"',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: _buildPricingCard(
-            context,
-            icon: '💎',
-            title: 'Gourmet Pro',
-            price: '\$12',
-            period: '/ month',
-            features: [
-              'Ultra-Realistic Images',
-              'Advanced AI Recipes',
-              'Unlimited Portfolio',
-            ],
-            buttonText: 'Get Pro',
-            isPopular: true,
-            onPressed: () {
-              _showFeatureSelection(context);
-            },
-          ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: _buildPricingCard(
-            context,
-            icon: '👑',
-            title: 'Michelin Elite',
-            price: '\$29',
-            period: '/ month',
-            features: [
-              'Michelin Star Precision',
-              '8K Hyper-Realistic Images',
-              'Priority Generation',
-            ],
-            buttonText: 'Go Elite',
-            isPopular: false,
-            onPressed: () {
-              _showFeatureSelection(context);
-            },
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildPricingCard(
-    BuildContext context, {
+  Widget _buildErrorBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _errorMessage!,
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPricingCard({
+    required String tier,
     required String icon,
     required String title,
     required String price,
@@ -141,8 +284,9 @@ class PricingPage extends StatelessWidget {
     required List<String> features,
     required String buttonText,
     required bool isPopular,
-    required VoidCallback onPressed,
   }) {
+    final isLoading = _loadingTier == tier;
+
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.cardBackground,
@@ -158,6 +302,7 @@ class PricingPage extends StatelessWidget {
         children: [
           if (isPopular)
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               decoration: const BoxDecoration(
                 color: AppTheme.primaryGreen,
@@ -178,13 +323,10 @@ class PricingPage extends StatelessWidget {
               ),
             ),
           Padding(
-            padding: const EdgeInsets.all(32.0),
+            padding: const EdgeInsets.all(32),
             child: Column(
               children: [
-                Text(
-                  icon,
-                  style: const TextStyle(fontSize: 48),
-                ),
+                Text(icon, style: const TextStyle(fontSize: 48)),
                 const SizedBox(height: 16),
                 Text(
                   title,
@@ -221,31 +363,48 @@ class PricingPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 32),
-                ...features.map((feature) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.check,
-                            color: AppTheme.primaryGreen,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
+                ...features.map(
+                  (feature) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.check,
+                          color: AppTheme.primaryGreen,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
                             feature,
                             style: const TextStyle(
                               fontSize: 14,
                               color: Colors.white,
                             ),
                           ),
-                        ],
-                      ),
-                    )),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: onPressed,
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading || _loadingTier != null
+                        ? null
+                        : () => _startPaidCheckout(tier),
+                    icon: isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.payment),
+                    label: Text(isLoading ? 'Redirecting…' : buttonText),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isPopular
                           ? AppTheme.primaryGreen
@@ -254,77 +413,15 @@ class PricingPage extends StatelessWidget {
                           isPopular ? AppTheme.darkBackground : Colors.white,
                       side: isPopular
                           ? null
-                          : const BorderSide(
-                              color: AppTheme.primaryGreen,
-                            ),
+                          : const BorderSide(color: AppTheme.primaryGreen),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
-                    child: Text(buttonText),
                   ),
                 ),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showFeatureSelection(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.cardBackground,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'What would you like to do?',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const RecipeFormPage()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-              ),
-              child: const Text('Generate Recipe'),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const KitchenTreasuresPage()),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: AppTheme.primaryGreen),
-              ),
-              child: const Text('Kitchen Treasures'),
-            ),
-          ],
-        ),
       ),
     );
   }

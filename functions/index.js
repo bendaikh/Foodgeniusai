@@ -1,4 +1,4 @@
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
@@ -12,23 +12,127 @@ const ALLOWED_PREFIXES = [
   '/payments/',
 ];
 
-// Helper to set CORS headers
-const setCorsHeaders = (res) => {
-  res.set('Access-Control-Allow-Origin', '*');
+const setCorsHeaders = (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Access-Control-Max-Age', '3600');
 };
 
+async function verifyAuthToken(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { error: 'Missing or invalid Authorization header', status: 401 };
+  }
+
+  try {
+    const idToken = authHeader.split('Bearer ')[1];
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    return { decodedToken };
+  } catch (authError) {
+    console.error('Auth verification failed:', authError);
+    return { error: 'Invalid authentication token', status: 401 };
+  }
+}
+
+async function loadDodoSettings() {
+  const settingsDoc = await getFirestore()
+    .collection('admin_settings')
+    .doc('payment_settings')
+    .get();
+
+  if (!settingsDoc.exists) {
+    return { error: 'DodoPayment settings not configured yet', status: 400 };
+  }
+
+  const settings = settingsDoc.data();
+  const apiKey = settings.dodo_api_key;
+  const testMode = settings.dodo_test_mode !== false;
+
+  if (!apiKey) {
+    return { error: 'DodoPayment API key is missing', status: 400 };
+  }
+
+  const baseUrl = testMode
+    ? 'https://test.dodopayments.com'
+    : 'https://live.dodopayments.com';
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  if (settings.dodo_business_id) {
+    headers['business-id'] = settings.dodo_business_id;
+  }
+
+  return { settings, apiKey, baseUrl, headers, testMode };
+}
+
+async function resolveProductId(tier, settings, baseUrl, headers) {
+  const configuredId =
+    tier === 'pro' ? settings.pro_product_id : settings.elite_product_id;
+  if (configuredId) return configuredId;
+
+  const response = await fetch(`${baseUrl}/products`, { headers });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Dodo products (${response.status})`);
+  }
+
+  const data = JSON.parse(await response.text());
+  const products = data.items || [];
+  const keywords =
+    tier === 'pro'
+      ? ['pro', 'gourmet']
+      : ['elite', 'michelin'];
+
+  const match = products.find((product) => {
+    const name = (product.name || '').toLowerCase();
+    return keywords.some((keyword) => name.includes(keyword));
+  });
+
+  return match?.product_id || match?.id || null;
+}
+
+function buildCheckoutUrl(session, testMode) {
+  if (session.checkout_url) return session.checkout_url;
+
+  const sessionId = session.session_id || session.id;
+  const baseCheckoutUrl = testMode
+    ? 'https://test.checkout.dodopayments.com'
+    : 'https://checkout.dodopayments.com';
+  return `${baseCheckoutUrl}/session/${sessionId}`;
+}
+
+function isCheckoutPaid(checkout) {
+  const status = (checkout.status || checkout.payment_status || '').toLowerCase();
+  return ['completed', 'paid', 'succeeded', 'success', 'active'].includes(status);
+}
+
+async function fetchCheckoutById(baseUrl, headers, checkoutId) {
+  const checkoutResponse = await fetch(`${baseUrl}/checkouts/${checkoutId}`, {
+    headers,
+  });
+  const checkoutText = await checkoutResponse.text();
+  if (!checkoutResponse.ok) return null;
+  return JSON.parse(checkoutText);
+}
+
 exports.dodoPaymentsProxy = onRequest({ cors: true }, async (req, res) => {
   // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
-    setCorsHeaders(res);
+    setCorsHeaders(req, res);
     res.status(204).send('');
     return;
   }
 
-  setCorsHeaders(res);
+  setCorsHeaders(req, res);
 
   try {
     // Verify Firebase Auth token from Authorization header
@@ -129,4 +233,209 @@ exports.dodoPaymentsProxy = onRequest({ cors: true }, async (req, res) => {
     console.error('DodoProxy Error:', error);
     res.status(500).json({ error: error.message || 'Unknown server error' });
   }
+});
+
+async function performCreateUserCheckout({
+  uid,
+  tier,
+  successUrl,
+  cancelUrl,
+}) {
+  if (!tier || !['pro', 'elite'].includes(tier)) {
+    throw new HttpsError('invalid-argument', 'A valid tier (pro or elite) is required.');
+  }
+
+  const dodo = await loadDodoSettings();
+  if (dodo.error) {
+    throw new HttpsError('failed-precondition', dodo.error);
+  }
+
+  const productId = await resolveProductId(
+    tier,
+    dodo.settings,
+    dodo.baseUrl,
+    dodo.headers,
+  );
+
+  if (!productId) {
+    throw new HttpsError(
+      'failed-precondition',
+      'No Dodo product found for this plan. Configure pro_product_id / elite_product_id in admin payment settings.',
+    );
+  }
+
+  const origin = successUrl ? new URL(successUrl).origin : '';
+  const baseSuccessUrl = successUrl || `${origin}/payment-success`;
+  const separator = baseSuccessUrl.includes('?') ? '&' : '?';
+  const returnUrl = `${baseSuccessUrl}${separator}tier=${encodeURIComponent(tier)}`;
+
+  const checkoutResponse = await fetch(`${dodo.baseUrl}/checkouts`, {
+    method: 'POST',
+    headers: dodo.headers,
+    body: JSON.stringify({
+      product_cart: [{ product_id: productId, quantity: 1 }],
+      return_url: returnUrl,
+      metadata: {
+        userId: uid,
+        tier,
+        cancelUrl: cancelUrl || `${origin}/payment-cancel`,
+      },
+    }),
+  });
+
+  const checkoutText = await checkoutResponse.text();
+  if (!checkoutResponse.ok) {
+    throw new HttpsError(
+      'internal',
+      checkoutText || 'Failed to create checkout session',
+    );
+  }
+
+  const session = JSON.parse(checkoutText);
+  const checkoutUrl = buildCheckoutUrl(session, dodo.testMode);
+  const checkoutId = session.checkout_id || session.id || session.session_id;
+
+  await getFirestore()
+    .collection('pending_checkouts')
+    .doc(`${uid}_${checkoutId}`)
+    .set({
+      userId: uid,
+      tier,
+      checkoutId,
+      productId,
+      status: 'pending',
+      createdAt: new Date(),
+    });
+
+  return { checkoutUrl, checkoutId, tier };
+}
+
+async function performCompleteUserCheckout({
+  uid,
+  checkoutId,
+  sessionId,
+  tier,
+}) {
+  const resolvedCheckoutId = checkoutId || sessionId;
+
+  const dodo = await loadDodoSettings();
+  if (dodo.error) {
+    throw new HttpsError('failed-precondition', dodo.error);
+  }
+
+  let resolvedTier = tier;
+  let checkoutData = null;
+
+  if (resolvedCheckoutId) {
+    checkoutData = await fetchCheckoutById(
+      dodo.baseUrl,
+      dodo.headers,
+      resolvedCheckoutId,
+    );
+
+    if (checkoutData && !isCheckoutPaid(checkoutData)) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      checkoutData = await fetchCheckoutById(
+        dodo.baseUrl,
+        dodo.headers,
+        resolvedCheckoutId,
+      );
+    }
+  }
+
+  const pendingRef = resolvedCheckoutId
+    ? getFirestore()
+        .collection('pending_checkouts')
+        .doc(`${uid}_${resolvedCheckoutId}`)
+    : null;
+
+  const pendingDoc = pendingRef ? await pendingRef.get() : null;
+  if (!resolvedTier && pendingDoc?.exists) {
+    resolvedTier = pendingDoc.data().tier;
+  }
+
+  if (checkoutData) {
+    resolvedTier =
+      resolvedTier ||
+      checkoutData.metadata?.tier ||
+      checkoutData.metadata?.subscriptionTier;
+  }
+
+  if (!resolvedTier || !['pro', 'elite'].includes(resolvedTier)) {
+    throw new HttpsError('invalid-argument', 'Unable to determine subscription tier.');
+  }
+
+  const paid =
+    (checkoutData && isCheckoutPaid(checkoutData)) ||
+    (pendingDoc?.exists && pendingDoc.data().status === 'completed');
+
+  if (!paid) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Payment has not been completed yet. Please finish checkout first.',
+    );
+  }
+
+  await getFirestore()
+    .collection('users')
+    .doc(uid)
+    .set(
+      {
+        subscriptionTier: resolvedTier,
+        subscriptionStatus: 'active',
+        subscriptionUpdatedAt: new Date(),
+      },
+      { merge: true },
+    );
+
+  if (pendingRef) {
+    await pendingRef.set(
+      {
+        status: 'completed',
+        completedAt: new Date(),
+      },
+      { merge: true },
+    );
+  }
+
+  return {
+    success: true,
+    subscriptionTier: resolvedTier,
+    subscriptionStatus: 'active',
+  };
+}
+
+exports.createUserCheckout = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to subscribe.');
+  }
+
+  if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError(
+      'permission-denied',
+      'Please create an account before subscribing.',
+    );
+  }
+
+  const { tier, successUrl, cancelUrl } = request.data || {};
+  return performCreateUserCheckout({
+    uid: request.auth.uid,
+    tier,
+    successUrl,
+    cancelUrl,
+  });
+});
+
+exports.completeUserCheckout = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in to complete checkout.');
+  }
+
+  const { checkoutId, sessionId, tier } = request.data || {};
+  return performCompleteUserCheckout({
+    uid: request.auth.uid,
+    checkoutId,
+    sessionId,
+    tier,
+  });
 });

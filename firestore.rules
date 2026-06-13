@@ -24,9 +24,11 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
-    // AI settings (OpenAI key, model, etc.) — required for recipe generation.
+    // AI settings (OpenAI key, model, etc.) — readable by all clients so guests
+    // can generate recipes without signing in. The key is already used client-side
+    // for OpenAI calls; writes remain authenticated-only.
     match /admin_settings/ai_settings {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if request.auth != null;
     }
 
