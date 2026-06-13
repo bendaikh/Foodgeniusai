@@ -3,7 +3,9 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 
 class UserAuthPage extends StatefulWidget {
-  const UserAuthPage({super.key});
+  final bool isLogin;
+  
+  const UserAuthPage({super.key, this.isLogin = true});
 
   @override
   State<UserAuthPage> createState() => _UserAuthPageState();
@@ -15,10 +17,16 @@ class _UserAuthPageState extends State<UserAuthPage> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   
-  bool _isLogin = true;
+  late bool _isLogin;
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLogin = widget.isLogin;
+  }
 
   @override
   void dispose() {

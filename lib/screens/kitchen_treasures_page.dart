@@ -74,25 +74,23 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
 
       final openaiService = OpenAIService(settings);
       final user = _authService.currentUser;
-      
-      if (user == null) {
-        throw Exception('Please log in to generate recipes');
-      }
 
       final recipes = await openaiService.generateRecipesFromIngredients(
         ingredients: _ingredients,
         numberOfRecipes: 1,
       );
 
-      // Generate images and save recipes
+      // Generate images for ALL users (including guests)
       List<RecipeModel> recipesWithImages = [];
       for (var recipe in recipes) {
         String? imageUrl;
+        
+        // Generate images for all users
         try {
           imageUrl = await openaiService.generateRecipeImage(
             recipe.title,
             'Professional food photography, high quality, well-lit, appetizing ${recipe.cuisine} cuisine dish, restaurant presentation, realistic, natural lighting, detailed texture',
-            userId: user.uid,
+            userId: user?.uid ?? 'guest',
           );
         } catch (e) {
           print('⚠️ Image generation failed: $e');
@@ -100,7 +98,7 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
 
         final recipeWithUser = RecipeModel(
           id: recipe.id,
-          userId: user.uid,
+          userId: user?.uid ?? 'guest',
           title: recipe.title,
           description: recipe.description,
           cuisine: recipe.cuisine,
@@ -118,7 +116,10 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
           createdAt: recipe.createdAt,
         );
 
-        await _firestoreService.createRecipe(recipeWithUser);
+        // Only save to Firestore if user is logged in
+        if (user != null) {
+          await _firestoreService.createRecipe(recipeWithUser);
+        }
         recipesWithImages.add(recipeWithUser);
       }
 
@@ -131,18 +132,25 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
+                Icon(
+                  user != null ? Icons.check_circle : Icons.visibility_off,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Recipes generated successfully!'),
+                  child: Text(
+                    user != null
+                        ? 'Recipes generated successfully!'
+                        : 'Recipe preview generated! Sign in to see full details.',
+                  ),
                 ),
               ],
             ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
+            backgroundColor: user != null ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

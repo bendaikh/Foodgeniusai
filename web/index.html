@@ -5,7 +5,30 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="FoodGeniusAI - AI-powered recipe generation and culinary inspiration">
+  <meta name="google-site-verification" content="zSr9Y3LzC3j4GOXvJWfBSt3qFsUFByza4ZEZbFj2q6c">
+  <meta name="description" content="FoodGeniusAI - AI-powered recipe generation and culinary inspiration. Create personalized recipes, get meal planning assistance, and discover new dishes with artificial intelligence.">
+  
+  <!-- Open Graph / Social Media Meta Tags -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://foodgeniusai.com/">
+  <meta property="og:title" content="FoodGeniusAI - AI-Powered Recipe Generation">
+  <meta property="og:description" content="AI-powered recipe generation and culinary inspiration. Create personalized recipes, get meal planning assistance, and discover new dishes.">
+  <meta property="og:image" content="https://foodgeniusai.com/icons/Icon-512.png?v=3">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://foodgeniusai.com/">
+  <meta name="twitter:title" content="FoodGeniusAI - AI-Powered Recipe Generation">
+  <meta name="twitter:description" content="AI-powered recipe generation and culinary inspiration. Create personalized recipes and discover new dishes.">
+  <meta name="twitter:image" content="https://foodgeniusai.com/icons/Icon-512.png?v=3">
+  
+  <!-- Additional SEO Meta Tags -->
+  <meta name="keywords" content="AI recipes, recipe generator, meal planning, cooking assistant, food AI, personalized recipes">
+  <meta name="author" content="FoodGeniusAI">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://foodgeniusai.com/">
   
   <!-- Preconnect to external resources for faster loading -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,15 +44,78 @@
   <link rel="dns-prefetch" href="https://firebaseinstallations.googleapis.com">
   <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com">
   
-  <!-- iOS meta tags & icons -->
+  <!-- iOS / mobile -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FoodGeniusAI">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="theme-color" content="#0A1628">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=3">
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <!--
+    Favicons — same-origin static files are the source of truth for Google
+    Search and first paint. Google requires a crawlable, same-domain icon; it
+    does not reliably use cross-origin Firebase Storage URLs from JS.
+    After an admin upload, run tools/sync_favicons_from_firebase.ps1 then
+    redeploy so these files match app_assets/favicon.png in Storage.
+    FaviconService (Dart) may still hot-swap the tab icon at runtime until
+    the next deploy syncs the static bundle.
+  -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=3">
+  <link rel="icon" type="image/png" sizes="16x16"  href="/favicon-16.png?v=3">
+  <link rel="icon" type="image/png" sizes="32x32"  href="/favicon-32.png?v=3">
+  <link rel="icon" type="image/png" sizes="48x48"  href="/favicon-48.png?v=3">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/Icon-192.png?v=3">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icons/Icon-512.png?v=3">
+  <link rel="shortcut icon" href="/favicon.ico?v=3">
+
+  <!--
+    Service-worker reset only. Do NOT replace the static <link rel="icon">
+    tags above — Google's crawler reads them (and /favicon.ico) before JS
+    runs, and same-origin icons are required for search-result favicons.
+  -->
+  <script>
+    (function () {
+      var URL_KEY  = 'app_favicon_url_v1';
+      var VER_KEY  = 'app_favicon_version_v1';
+
+      // Wipe stale Flutter service workers + their caches.
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            for (var i = 0; i < regs.length; i++) regs[i].unregister();
+          }).catch(function(){});
+        }
+        if (window.caches && caches.keys) {
+          caches.keys().then(function (keys) {
+            for (var i = 0; i < keys.length; i++) caches.delete(keys[i]);
+          }).catch(function(){});
+        }
+      } catch (_) {}
+
+      // Seed localStorage for FaviconService (Dart) without touching DOM icons.
+      try {
+        fetch(
+          'https://firestore.googleapis.com/v1/projects/gourmetai-c432b/databases/(default)/documents/admin_settings/app_settings',
+          { cache: 'no-store' }
+        ).then(function (res) {
+          if (!res.ok) return null;
+          return res.json();
+        }).then(function (doc) {
+          if (!doc || !doc.fields) return;
+          var ts = doc.fields.faviconUpdatedAt;
+          var url = doc.fields.faviconUrl;
+          var newVer = (ts && (ts.timestampValue || ts.integerValue)) ||
+                       (url && url.stringValue) || null;
+          if (!newVer) return;
+          try { localStorage.setItem(VER_KEY, String(newVer)); } catch (_) {}
+          if (url && url.stringValue) {
+            try { localStorage.setItem(URL_KEY, url.stringValue); } catch (_) {}
+          }
+        }).catch(function () {});
+      } catch (_) {}
+    })();
+  </script>
 
   <title>FoodGeniusAI - AI-Powered Recipe Generation</title>
   <link rel="manifest" href="manifest.json">
@@ -79,7 +165,7 @@
 <body>
   <!-- Branded splash shown instantly while Flutter loads -->
   <div id="splash" class="splash">
-    <div class="splash-title">testfoodgeniusai</div>
+    <div class="splash-title">FoodGeniusAI</div>
     <div class="splash-spinner"></div>
   </div>
 

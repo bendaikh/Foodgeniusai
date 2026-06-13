@@ -9,16 +9,24 @@ import 'admin/screens/admin_login_page.dart';
 import 'screens/quick_admin_setup_page.dart';
 import 'screens/firebase_test_page.dart';
 import 'screens/admin_password_reset_page.dart';
+import 'screens/fix_admin_page.dart';
+import 'screens/force_create_admin_page.dart';
+import 'services/favicon_service.dart';
 
 late final Future<FirebaseApp> _firebaseInit;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   usePathUrlStrategy();
 
   _firebaseInit = Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize favicon service after Firebase is ready
+  _firebaseInit.then((_) {
+    FaviconService().initialize();
+  });
 
   runApp(const FoodGeniusAIApp());
 }
@@ -38,7 +46,9 @@ class FoodGeniusAIApp extends StatelessWidget {
         '/admin': (context) => _FirebaseGate(child: const AdminLoginPage()),
         '/setup-admin': (context) => _FirebaseGate(child: const QuickAdminSetupPage()),
         '/test-firebase': (context) => _FirebaseGate(child: const FirebaseTestPage()),
-        '/fix-admin': (context) => _FirebaseGate(child: const AdminPasswordResetPage()),
+        '/fix-admin': (context) => _FirebaseGate(child: const FixAdminPage()),
+        '/force-admin': (context) => _FirebaseGate(child: const ForceCreateAdminPage()),
+        '/reset-admin': (context) => _FirebaseGate(child: const AdminPasswordResetPage()),
       },
     );
   }

@@ -1,199 +1,260 @@
-# ✅ Firebase Storage Setup Checklist
+# 🎯 DodoPayment Setup Checklist
 
-Print this and check off items as you complete them!
+Use this checklist to set up your payment integration step-by-step.
 
----
+## 📋 Pre-Setup
 
-## Phase 1: Initial Setup (REQUIRED)
+- [ ] Read `PAYMENT_INTEGRATION_SUMMARY.md` (overview of what was added)
+- [ ] Read `DODOPAYMENT_QUICK_START.md` (5-minute guide)
+- [ ] Have access to your admin panel
 
-### Firebase Console Setup
-- [ ] Open Firebase Console: https://console.firebase.google.com/
-- [ ] Select project: **gourmetai**
-- [ ] Go to **Storage** section
-- [ ] Click **Rules** tab
-- [ ] Copy rules from `FIREBASE_RULES_SETUP.md`
-- [ ] Paste rules into editor
-- [ ] Click **Publish** button
-- [ ] Verify "Rules successfully published" message appears
+## 🔧 Initial Configuration
 
-**⚠️ Cannot proceed until this is done!**
+### Get DodoPayment Credentials
+- [ ] Go to https://dashboard.dodopayments.com
+- [ ] Sign up for a free account
+- [ ] Navigate to **Developers** → **API Keys**
+- [ ] Copy your **API Key** (starts with `dodo_sk_test_` for test mode)
+- [ ] Copy your **Business ID** (starts with `bus_`)
+- [ ] Note: Keep test credentials for now
 
----
+### Configure in Admin Panel
+- [ ] Open your admin panel (`/admin`)
+- [ ] Click on **Settings** tab in the sidebar
+- [ ] Scroll down to **DodoPayment Configuration** section
+- [ ] Paste your **API Key** in the first field
+- [ ] Paste your **Business ID** in the second field
+- [ ] Ensure **Test Mode** toggle is ON (green)
+- [ ] Click **Test Connection** button
+- [ ] Verify you see "✅ Connected successfully" message
+- [ ] Click **Save DodoPay Config** button
 
-## Phase 2: Test Storage (REQUIRED)
+## 🛍️ Create Test Products
 
-### Add Test Button
-- [ ] Open `lib/screens/landing_page.dart`
-- [ ] Add import: `import 'storage_test_page.dart';`
-- [ ] Add test button (see `QUICK_TEST_GUIDE.md`)
-- [ ] Save file
+### Product 1: Pro Plan
+- [ ] Go to **Payments** tab
+- [ ] Click **Create Product** button
+- [ ] Fill in:
+  - Name: `Pro Plan`
+  - Description: `Monthly subscription with premium features`
+  - Price: `2900` (= $29.00)
+  - Currency: `USD`
+- [ ] Click **Create**
+- [ ] Verify product card appears in the list
 
-### Run Test
-- [ ] Run command: `flutter run`
-- [ ] Click "Test Storage" button
-- [ ] Click "Upload Test Image"
-- [ ] Choose Gallery or Camera
-- [ ] Select/take a photo
-- [ ] Wait for upload
-- [ ] See "✅ Image uploaded successfully!" message
-- [ ] Image appears in app list
+### Product 2: Elite Plan (Optional)
+- [ ] Click **Create Product** again
+- [ ] Fill in:
+  - Name: `Elite Plan`
+  - Description: `Ultimate subscription with all features`
+  - Price: `4900` (= $49.00)
+  - Currency: `USD`
+- [ ] Click **Create**
+- [ ] Verify product card appears in the list
 
-### Verify in Firebase
-- [ ] Open Firebase Console
-- [ ] Go to Storage → Files
-- [ ] See uploaded image in `recipes/test-user-{timestamp}/`
-- [ ] Click on image to view
-- [ ] Verify download URL works
+## 💳 Test Checkout Flow
 
-### Test Delete
-- [ ] Click delete button on uploaded image
-- [ ] See "✅ Image deleted!" message
-- [ ] Check Firebase Console
-- [ ] Verify image is removed
+### Test Inline Checkout
+- [ ] Click **Checkout** button on any product card
+- [ ] Select **Inline Checkout** option
+- [ ] Verify checkout page loads with:
+  - Left side: Embedded payment form
+  - Right side: Order summary
+- [ ] Fill in the checkout form:
+  - Email: `test@example.com`
+  - Country: `United States`
+  - ZIP: `10001`
+  - Card: `4242 4242 4242 4242`
+  - Expiry: `12/28`
+  - CVV: `123`
+  - Name: `Test User`
+- [ ] Click **Complete Purchase** or **Pay Now**
+- [ ] Verify payment processes successfully
 
-**✅ If all tests pass, storage is working!**
+### Test New Window Checkout
+- [ ] Go back to **Payments** tab
+- [ ] Click **Checkout** on a product again
+- [ ] Select **New Window** option
+- [ ] Verify checkout opens in a new tab
+- [ ] Complete the same test payment flow
+- [ ] Verify payment processes successfully
 
----
+## 📊 Verify Dashboard
 
-## Phase 3: Integration (RECOMMENDED)
+### Check DodoPayments Dashboard
+- [ ] Go to https://dashboard.dodopayments.com
+- [ ] Click on **Payments** in the sidebar
+- [ ] Verify you see your test payments
+- [ ] Check payment status is "Succeeded"
+- [ ] Review payment details
 
-### Recipe Form Integration
-- [ ] Open `lib/screens/recipe_form_page.dart`
-- [ ] Read example: `lib/examples/recipe_form_with_image_example.dart`
-- [ ] Add `String? _recipeImageUrl;` to state
-- [ ] Add `ImageUploadWidget` to form
-- [ ] Connect `onImageUploaded` callback
-- [ ] Test recipe creation with image
+### Check Your Admin Panel
+- [ ] Go back to your **Payments** tab
+- [ ] Click **Refresh** button
+- [ ] Verify revenue cards update (if implemented)
+- [ ] Check for any transactions in the table
 
-### Firestore Integration
-- [ ] Verify `RecipeModel` has `imageUrl` field ✅ (already exists)
-- [ ] Update recipe creation to include `imageUrl`
-- [ ] Save recipe to Firestore
-- [ ] Verify `imageUrl` appears in Firestore document
+## 🎨 Explore Features
 
-### Display Images
-- [ ] Update recipe cards to show images
-- [ ] Add `Image.network(recipe.imageUrl)` where needed
-- [ ] Add loading placeholder
-- [ ] Add error placeholder
-- [ ] Add fallback icon for recipes without images
+### View Inline Checkout Demo
+- [ ] Click **View Inline Demo** button
+- [ ] Explore the inline checkout interface
+- [ ] Notice real-time updates as you fill the form
+- [ ] Check the security badges and order summary
 
----
+### Test Product Management
+- [ ] Create another test product with different price
+- [ ] Try creating products in different currencies (EUR, GBP)
+- [ ] Verify all products appear correctly
 
-## Phase 4: UI Polish (OPTIONAL)
+## 📱 Test Mobile Experience
 
-### Error Handling
-- [ ] Test with no internet (airplane mode)
-- [ ] Verify error messages appear
-- [ ] Test with large image (>5MB)
-- [ ] Verify size limit error appears
+### Mobile Checkout
+- [ ] Open your admin panel on a mobile device (or use browser dev tools)
+- [ ] Go to **Payments** tab
+- [ ] Click **Checkout** on a product
+- [ ] Verify inline checkout is responsive
+- [ ] Complete a test payment on mobile
+- [ ] Verify it works smoothly
 
-### Loading States
-- [ ] Verify upload progress shows
-- [ ] Verify loading spinner during upload
-- [ ] Verify image preview works
+## 🔐 Security Check
 
-### User Experience
-- [ ] Test camera on real device
-- [ ] Test gallery picker
-- [ ] Test edit/replace image
-- [ ] Test delete image
-- [ ] Verify all success/error messages are user-friendly
+### Verify Secure Storage
+- [ ] Go to Firebase Console
+- [ ] Navigate to **Firestore Database**
+- [ ] Find `admin_settings` collection
+- [ ] Check `payment_settings` document
+- [ ] Verify your credentials are stored there
+- [ ] Check that API key is not visible in browser dev tools
 
----
+### Test Connection Toggle
+- [ ] Go to **Settings** tab
+- [ ] Change a character in the API key
+- [ ] Click **Test Connection**
+- [ ] Verify you get an error message
+- [ ] Restore the correct API key
+- [ ] Test connection again - should succeed
 
-## Phase 5: Profile Pictures (OPTIONAL)
+## 📚 Documentation Review
 
-### Profile Upload
-- [ ] Add profile picture upload to user settings
-- [ ] Use `uploadProfilePicture()` method
-- [ ] Save URL to user document in Firestore
-- [ ] Display profile picture in app
+### Read Integration Guide
+- [ ] Open `DODOPAYMENT_INTEGRATION_GUIDE.md`
+- [ ] Review the webhook setup section
+- [ ] Understand the security best practices
+- [ ] Note the troubleshooting tips
 
----
+### Bookmark Resources
+- [ ] Bookmark: https://docs.dodopayments.com
+- [ ] Bookmark: https://dashboard.dodopayments.com
+- [ ] Save Discord invite: https://discord.gg/bYqAp4ayYh
+- [ ] Save support email: support@dodopayments.com
 
-## Phase 6: Cleanup
+## 🚀 Going Live Preparation (When Ready)
 
-### Remove Test Code
-- [ ] Remove "Test Storage" button from landing page
-- [ ] Remove test imports
-- [ ] Clean up any console.log statements
-- [ ] Remove unused example files (optional)
+### Before Going Live
+- [ ] Test thoroughly with multiple products
+- [ ] Test different payment methods
+- [ ] Test error scenarios (declined cards)
+- [ ] Set up webhooks (see integration guide)
+- [ ] Create live products in DodoPayments dashboard
 
----
+### Get Live Credentials
+- [ ] In DodoPayments dashboard, switch to **Live Mode**
+- [ ] Generate live API keys
+- [ ] Copy live **API Key** and **Business ID**
 
-## Phase 7: Monitoring (ONGOING)
+### Update Admin Configuration
+- [ ] Go to your admin **Settings** tab
+- [ ] Update API Key with live credentials
+- [ ] Update Business ID with live credentials
+- [ ] Toggle **Test Mode** to OFF
+- [ ] Click **Test Connection** to verify
+- [ ] Click **Save DodoPay Config**
 
-### Firebase Console
-- [ ] Check storage usage regularly
-- [ ] Monitor download bandwidth
-- [ ] Check for unusual activity
-- [ ] Verify rules are working correctly
-
-### App Performance
-- [ ] Test app with slow internet
-- [ ] Test with many images
-- [ ] Monitor memory usage
-- [ ] Check image load times
-
----
-
-## 📋 Quick Reference
-
-### Commands
-```bash
-# Install dependencies
-flutter pub get
-
-# Run app
-flutter run
-
-# Clean build
-flutter clean && flutter pub get && flutter run
-```
-
-### Key Files
-- Rules: `FIREBASE_RULES_SETUP.md`
-- Quick Start: `STORAGE_QUICKSTART.md`
-- Testing: `QUICK_TEST_GUIDE.md`
-- Examples: `lib/examples/recipe_form_with_image_example.dart`
-
-### Firebase Console
-- URL: https://console.firebase.google.com/
-- Project: **gourmetai**
-- Storage: https://console.firebase.google.com/project/gourmetai/storage
-
----
+### Test Live Mode
+- [ ] Create a test product in live mode
+- [ ] Make a real payment (small amount)
+- [ ] Verify payment appears in dashboard
+- [ ] Verify webhooks are working (if set up)
 
 ## ✅ Final Verification
 
-Before going live, verify:
+### Smoke Test
+- [ ] Admin can configure DodoPayment credentials
+- [ ] Admin can create products
+- [ ] Admin can generate checkout sessions
+- [ ] Inline checkout loads and works
+- [ ] Payments process successfully
+- [ ] Revenue tracking displays correctly
+- [ ] No console errors in browser
 
-- [ ] ✅ Storage rules are published
-- [ ] ✅ Upload works on Android device
-- [ ] ✅ Camera works on real device
-- [ ] ✅ Gallery picker works
-- [ ] ✅ Images appear in Firebase Console
-- [ ] ✅ Images display in app
-- [ ] ✅ Delete works
-- [ ] ✅ Error handling works
-- [ ] ✅ No console errors
-- [ ] ✅ No memory leaks
+### User Experience
+- [ ] Checkout flow is smooth and intuitive
+- [ ] Payment form is mobile-friendly
+- [ ] Error messages are clear
+- [ ] Success messages appear
+- [ ] Navigation works correctly
+
+## 🎓 Optional Advanced Features
+
+### Webhook Implementation
+- [ ] Set up webhook endpoint in your backend
+- [ ] Register webhook URL in DodoPayments dashboard
+- [ ] Subscribe to payment events
+- [ ] Test webhook delivery
+- [ ] Implement webhook handler logic
+
+### Customer Management
+- [ ] Add customer email collection
+- [ ] Store payment history per user
+- [ ] Create customer portal
+- [ ] Implement subscription management
+
+### Analytics Enhancement
+- [ ] Add charts for revenue over time
+- [ ] Track conversion rates
+- [ ] Monitor failed payments
+- [ ] Generate financial reports
+
+## 🎉 Congratulations!
+
+If you've completed all the items above, your DodoPayment integration is fully set up and ready to accept payments!
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**Issue**: Connection test fails
+- [ ] Check API key is correct
+- [ ] Verify you're in the right mode (test/live)
+- [ ] Check internet connection
+- [ ] Look at browser console for errors
+
+**Issue**: Products don't appear
+- [ ] Click the Refresh button
+- [ ] Check browser console for API errors
+- [ ] Verify API key has correct permissions
+
+**Issue**: Inline checkout doesn't load
+- [ ] Check browser console for errors
+- [ ] Verify checkout URL is valid
+- [ ] Clear browser cache
+- [ ] Try in incognito mode
+
+**Issue**: Payment fails
+- [ ] Verify using correct test card number
+- [ ] Check expiry date is in the future
+- [ ] Try a different test card
+- [ ] Check DodoPayments status page
+
+## 📞 Get Help
+
+If you're stuck:
+1. Check the troubleshooting section in `DODOPAYMENT_INTEGRATION_GUIDE.md`
+2. Review DodoPayments documentation
+3. Ask in DodoPayments Discord community
+4. Contact support@dodopayments.com
 
 ---
 
-## 🎉 Status
-
-Current Status: ⬜ Not Started / ⏳ In Progress / ✅ Complete
-
-- Phase 1 (Setup): ⬜
-- Phase 2 (Test): ⬜
-- Phase 3 (Integration): ⬜
-- Phase 4 (Polish): ⬜
-- Phase 5 (Profiles): ⬜
-- Phase 6 (Cleanup): ⬜
-- Phase 7 (Monitoring): ⬜
-
----
-
-**Mark this checklist as you go! Good luck!** 🚀
+**Next Steps**: Once you've completed this checklist, you're ready to start accepting real payments! 🎊
