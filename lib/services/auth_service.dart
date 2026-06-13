@@ -11,6 +11,31 @@ class AuthService {
   // Get current user stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
+  /// Ensures the user is authenticated before recipe generation.
+  /// Guests are signed in anonymously so Firestore can load AI settings.
+  Future<User> ensureAuthForRecipeGeneration() async {
+    final existingUser = _auth.currentUser;
+    if (existingUser != null) {
+      return existingUser;
+    }
+
+    try {
+      final result = await _auth.signInAnonymously();
+      final user = result.user;
+      if (user == null) {
+        throw Exception('Anonymous sign-in failed');
+      }
+      return user;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'operation-not-allowed') {
+        throw Exception(
+          'Guest recipe generation is disabled. Enable Anonymous sign-in in Firebase Authentication, or log in with an account.',
+        );
+      }
+      throw Exception('Unable to start recipe generation: ${e.message}');
+    }
+  }
+
   // Sign in with email and password
   Future<UserCredential?> signInWithEmailAndPassword({
     required String email,

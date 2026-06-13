@@ -66,6 +66,7 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
     );
 
     try {
+      final user = await _authService.ensureAuthForRecipeGeneration();
       final settings = await _settingsService.getSettings();
       
       if (settings.openaiApiKey == null || settings.openaiApiKey!.isEmpty) {
@@ -73,7 +74,6 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
       }
 
       final openaiService = OpenAIService(settings);
-      final user = _authService.currentUser;
 
       final recipes = await openaiService.generateRecipesFromIngredients(
         ingredients: _ingredients,
@@ -90,7 +90,7 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
           imageUrl = await openaiService.generateRecipeImage(
             recipe.title,
             'Professional food photography, high quality, well-lit, appetizing ${recipe.cuisine} cuisine dish, restaurant presentation, realistic, natural lighting, detailed texture',
-            userId: user?.uid ?? 'guest',
+            userId: user.isAnonymous ? 'guest' : user.uid,
           );
         } catch (e) {
           print('⚠️ Image generation failed: $e');
@@ -98,7 +98,7 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
 
         final recipeWithUser = RecipeModel(
           id: recipe.id,
-          userId: user?.uid ?? 'guest',
+          userId: user.isAnonymous ? 'guest' : user.uid,
           title: recipe.title,
           description: recipe.description,
           cuisine: recipe.cuisine,
@@ -116,8 +116,8 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
           createdAt: recipe.createdAt,
         );
 
-        // Only save to Firestore if user is logged in
-        if (user != null) {
+        // Only save to Firestore for registered users (not anonymous guests)
+        if (!user.isAnonymous) {
           await _firestoreService.createRecipe(recipeWithUser);
         }
         recipesWithImages.add(recipeWithUser);
@@ -136,20 +136,20 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
             content: Row(
               children: [
                 Icon(
-                  user != null ? Icons.check_circle : Icons.visibility_off,
+                  !user.isAnonymous ? Icons.check_circle : Icons.visibility_off,
                   color: Colors.white,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    user != null
+                    !user.isAnonymous
                         ? 'Recipes generated successfully!'
                         : 'Recipe preview generated! Sign in to see full details.',
                   ),
                 ),
               ],
             ),
-            backgroundColor: user != null ? Colors.green : Colors.orange,
+            backgroundColor: !user.isAnonymous ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 3),
           ),
         );
