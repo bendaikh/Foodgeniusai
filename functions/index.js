@@ -75,6 +75,29 @@ async function loadDodoSettings() {
   return { settings, apiKey, baseUrl, headers, testMode };
 }
 
+async function resolvePlanFromFirestore(planId) {
+  const planDoc = await getFirestore()
+    .collection('subscription_plans')
+    .doc(planId)
+    .get();
+
+  if (!planDoc.exists) {
+    return { error: `Subscription plan "${planId}" was not found.` };
+  }
+
+  const plan = planDoc.data();
+  if (!plan.isActive) {
+    return { error: 'This subscription plan is no longer available.' };
+  }
+
+  const productId = plan.dodoProductId;
+  if (!productId) {
+    return { error: 'This plan is missing a DodoPayments product ID.' };
+  }
+
+  return { plan, productId, planId };
+}
+
 async function resolveProductId(tier, settings, baseUrl, headers) {
   const configuredId =
     tier === 'pro' ? settings.pro_product_id : settings.elite_product_id;
@@ -238,36 +261,51 @@ exports.dodoPaymentsProxy = onRequest({ cors: true }, async (req, res) => {
 async function performCreateUserCheckout({
   uid,
   tier,
+  planId,
   successUrl,
   cancelUrl,
 }) {
-  if (!tier || !['pro', 'elite'].includes(tier)) {
-    throw new HttpsError('invalid-argument', 'A valid tier (pro or elite) is required.');
-  }
-
   const dodo = await loadDodoSettings();
   if (dodo.error) {
     throw new HttpsError('failed-precondition', dodo.error);
   }
 
-  const productId = await resolveProductId(
-    tier,
-    dodo.settings,
-    dodo.baseUrl,
-    dodo.headers,
-  );
+  let resolvedPlanId = planId || null;
+  let resolvedTier = tier || null;
+  let productId = null;
+
+  if (resolvedPlanId) {
+    const planResult = await resolvePlanFromFirestore(resolvedPlanId);
+    if (planResult.error) {
+      throw new HttpsError('failed-precondition', planResult.error);
+    }
+    productId = planResult.productId;
+    resolvedTier = resolvedPlanId;
+  } else if (resolvedTier && ['pro', 'elite'].includes(resolvedTier)) {
+    productId = await resolveProductId(
+      resolvedTier,
+      dodo.settings,
+      dodo.baseUrl,
+      dodo.headers,
+    );
+  } else {
+    throw new HttpsError(
+      'invalid-argument',
+      'A valid planId or tier (pro/elite) is required.',
+    );
+  }
 
   if (!productId) {
     throw new HttpsError(
       'failed-precondition',
-      'No Dodo product found for this plan. Configure pro_product_id / elite_product_id in admin payment settings.',
+      'No Dodo product found for this plan. Create and activate the plan in the admin Payments section.',
     );
   }
 
   const origin = successUrl ? new URL(successUrl).origin : '';
   const baseSuccessUrl = successUrl || `${origin}/payment-success`;
   const separator = baseSuccessUrl.includes('?') ? '&' : '?';
-  const returnUrl = `${baseSuccessUrl}${separator}tier=${encodeURIComponent(tier)}`;
+  const returnUrl = `${baseSuccessUrl}${separator}planId=${encodeURIComponent(resolvedTier)}`;
 
   const checkoutResponse = await fetch(`${dodo.baseUrl}/checkouts`, {
     method: 'POST',
@@ -277,7 +315,8 @@ async function performCreateUserCheckout({
       return_url: returnUrl,
       metadata: {
         userId: uid,
-        tier,
+        tier: resolvedTier,
+        planId: resolvedPlanId || resolvedTier,
         cancelUrl: cancelUrl || `${origin}/payment-cancel`,
       },
     }),
@@ -300,14 +339,15 @@ async function performCreateUserCheckout({
     .doc(`${uid}_${checkoutId}`)
     .set({
       userId: uid,
-      tier,
+      tier: resolvedTier,
+      planId: resolvedPlanId || resolvedTier,
       checkoutId,
       productId,
       status: 'pending',
       createdAt: new Date(),
     });
 
-  return { checkoutUrl, checkoutId, tier };
+  return { checkoutUrl, checkoutId, tier: resolvedTier, planId: resolvedPlanId || resolvedTier };
 }
 
 async function performCompleteUserCheckout({
@@ -315,6 +355,7 @@ async function performCompleteUserCheckout({
   checkoutId,
   sessionId,
   tier,
+  planId,
 }) {
   const resolvedCheckoutId = checkoutId || sessionId;
 
@@ -323,7 +364,7 @@ async function performCompleteUserCheckout({
     throw new HttpsError('failed-precondition', dodo.error);
   }
 
-  let resolvedTier = tier;
+  let resolvedTier = tier || planId || null;
   let checkoutData = null;
 
   if (resolvedCheckoutId) {
@@ -351,18 +392,19 @@ async function performCompleteUserCheckout({
 
   const pendingDoc = pendingRef ? await pendingRef.get() : null;
   if (!resolvedTier && pendingDoc?.exists) {
-    resolvedTier = pendingDoc.data().tier;
+    resolvedTier = pendingDoc.data().planId || pendingDoc.data().tier;
   }
 
   if (checkoutData) {
     resolvedTier =
       resolvedTier ||
+      checkoutData.metadata?.planId ||
       checkoutData.metadata?.tier ||
       checkoutData.metadata?.subscriptionTier;
   }
 
-  if (!resolvedTier || !['pro', 'elite'].includes(resolvedTier)) {
-    throw new HttpsError('invalid-argument', 'Unable to determine subscription tier.');
+  if (!resolvedTier || resolvedTier === 'free') {
+    throw new HttpsError('invalid-argument', 'Unable to determine subscription plan.');
   }
 
   const paid =
@@ -417,10 +459,11 @@ exports.createUserCheckout = onCall({ region: 'us-central1' }, async (request) =
     );
   }
 
-  const { tier, successUrl, cancelUrl } = request.data || {};
+  const { tier, planId, successUrl, cancelUrl } = request.data || {};
   return performCreateUserCheckout({
     uid: request.auth.uid,
     tier,
+    planId,
     successUrl,
     cancelUrl,
   });
@@ -431,11 +474,12 @@ exports.completeUserCheckout = onCall({ region: 'us-central1' }, async (request)
     throw new HttpsError('unauthenticated', 'You must be signed in to complete checkout.');
   }
 
-  const { checkoutId, sessionId, tier } = request.data || {};
+  const { checkoutId, sessionId, tier, planId } = request.data || {};
   return performCompleteUserCheckout({
     uid: request.auth.uid,
     checkoutId,
     sessionId,
     tier,
+    planId,
   });
 });

@@ -194,14 +194,45 @@ class DodoPaymentService {
     }
   }
 
+  /// Converts a dollar amount (e.g. 10.00) to cents for the Dodo API.
+  static int dollarsToCents(double dollars) => (dollars * 100).round();
+
+  /// Extracts price in cents from a Dodo product response.
+  static int extractPriceCents(Map<String, dynamic> product) {
+    final price = product['price'];
+    if (price is int) return price;
+    if (price is num) return price.round();
+    if (price is Map) {
+      final nested = price['price'];
+      if (nested is int) return nested;
+      if (nested is num) return nested.round();
+    }
+    return 0;
+  }
+
+  static String extractCurrency(Map<String, dynamic> product) {
+    final price = product['price'];
+    if (price is Map && price['currency'] != null) {
+      return price['currency'].toString();
+    }
+    return product['currency'] as String? ?? 'USD';
+  }
+
   Future<Map<String, dynamic>> createProduct({
     required String name,
     required String description,
-    required int price,
     required String currency,
+    int? price,
+    double? priceInDollars,
     String? imageUrl,
   }) async {
     if (!isConfigured) throw Exception('DodoPayment not configured');
+
+    final priceCents = price ??
+        (priceInDollars != null ? dollarsToCents(priceInDollars) : null);
+    if (priceCents == null || priceCents <= 0) {
+      throw Exception('A valid price is required.');
+    }
 
     final response = await _request(
       method: 'POST',
@@ -212,7 +243,7 @@ class DodoPaymentService {
         'tax_category': 'digital_products',
         'price': {
           'type': 'one_time_price',
-          'price': price,
+          'price': priceCents,
           'currency': currency,
           'discount': 0,
           'purchasing_power_parity': false,

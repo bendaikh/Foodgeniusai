@@ -124,6 +124,8 @@ class _InlineCheckoutDemoPageState extends State<InlineCheckoutDemoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isNarrow = MediaQuery.of(context).size.width < 900;
+
     return Scaffold(
       backgroundColor: AppTheme.darkBackground,
       appBar: AppBar(
@@ -136,241 +138,172 @@ class _InlineCheckoutDemoPageState extends State<InlineCheckoutDemoPage> {
       ),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left side - Checkout Frame
-              Expanded(
-                flex: 2,
-                child: Container(
+          padding: EdgeInsets.all(isNarrow ? 16 : 32),
+          child: isNarrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildCheckoutPanel(),
+                    const SizedBox(height: 16),
+                    _buildOrderSummary(),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 2, child: _buildCheckoutPanel()),
+                    const SizedBox(width: 24),
+                    Expanded(flex: 1, child: _buildOrderSummary()),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCheckoutPanel() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppTheme.cardBackground,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppTheme.primaryGreen.withOpacity(0.2),
-                    ),
+                    color: AppTheme.primaryGreen.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.primaryGreen.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.shopping_cart,
-                                color: AppTheme.primaryGreen,
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Complete Your Purchase',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                Text(
-                                  'Secure checkout powered by DodoPayments',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.greyText,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_isLoading)
-                        const Padding(
-                          padding: EdgeInsets.all(48.0),
-                          child: Column(
-                            children: [
-                              CircularProgressIndicator(
-                                color: AppTheme.primaryGreen,
-                              ),
-                              SizedBox(height: 16),
-                              Text(
-                                'Loading checkout...',
-                                style: TextStyle(color: AppTheme.greyText),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        SizedBox(
-                          height: 600,
-                          child: HtmlElementView(viewType: _viewId),
-                        ),
-                    ],
+                  child: const Icon(
+                    Icons.shopping_cart,
+                    color: AppTheme.primaryGreen,
+                    size: 24,
                   ),
                 ),
-              ),
-              const SizedBox(width: 24),
-              // Right side - Order Summary
-              Expanded(
-                flex: 1,
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardBackground,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppTheme.primaryGreen.withOpacity(0.2),
-                    ),
-                  ),
+                const SizedBox(width: 16),
+                const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Order Summary',
+                      Text(
+                        'Complete Your Purchase',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      _buildSummaryRow('Subtotal', '\$29.00'),
-                      const SizedBox(height: 12),
-                      _buildSummaryRow('Tax', 'Calculated at checkout'),
-                      const SizedBox(height: 12),
-                      const Divider(color: AppTheme.greyText),
-                      const SizedBox(height: 12),
-                      _buildSummaryRow(
-                        'Total',
-                        '\$29.00',
-                        isTotal: true,
-                      ),
-                      const SizedBox(height: 24),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryGreen.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppTheme.primaryGreen.withOpacity(0.3),
-                          ),
-                        ),
-                        child: const Column(
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.security,
-                                  color: AppTheme.primaryGreen,
-                                  size: 20,
-                                ),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'Secure Payment',
-                                    style: TextStyle(
-                                      color: AppTheme.primaryGreen,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Your payment information is encrypted and secure',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.greyText,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'What you\'ll get:',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Instant access',
-                                    style: TextStyle(
-                                      color: AppTheme.greyText,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Premium features',
-                                    style: TextStyle(
-                                      color: AppTheme.greyText,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.blue, size: 16),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    '24/7 support',
-                                    style: TextStyle(
-                                      color: AppTheme.greyText,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                      Text(
+                        'Secure checkout powered by DodoPayments',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.greyText,
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(48),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(color: AppTheme.primaryGreen),
+                  SizedBox(height: 16),
+                  Text(
+                    'Loading checkout...',
+                    style: TextStyle(color: AppTheme.greyText),
+                  ),
+                ],
+              ),
+            )
+          else
+            SizedBox(
+              height: 600,
+              child: HtmlElementView(viewType: _viewId),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderSummary() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.primaryGreen.withOpacity(0.2),
         ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Order Summary',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _buildSummaryRow('Subtotal', 'Shown at checkout'),
+          const SizedBox(height: 12),
+          _buildSummaryRow('Tax', 'Calculated at checkout'),
+          const SizedBox(height: 12),
+          const Divider(color: AppTheme.greyText),
+          const SizedBox(height: 12),
+          _buildSummaryRow('Total', 'See checkout form', isTotal: true),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryGreen.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.primaryGreen.withOpacity(0.3),
+              ),
+            ),
+            child: const Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.security, color: AppTheme.primaryGreen, size: 20),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Secure Payment',
+                        style: TextStyle(
+                          color: AppTheme.primaryGreen,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Your payment information is encrypted and secure',
+                  style: TextStyle(fontSize: 12, color: AppTheme.greyText),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

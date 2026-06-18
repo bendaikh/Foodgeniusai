@@ -6,7 +6,7 @@ class CheckoutService {
   FirebaseFunctions get _functions =>
       FirebaseFunctions.instanceFor(region: 'us-central1');
 
-  Future<String> startCheckout({required String tier}) async {
+  Future<String> startCheckout({required String planId, String? tier}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
       throw Exception('Please sign in before choosing a paid plan.');
@@ -17,7 +17,8 @@ class CheckoutService {
 
     try {
       final result = await _functions.httpsCallable('createUserCheckout').call({
-        'tier': tier,
+        'planId': planId,
+        if (tier != null) 'tier': tier,
         'successUrl': '$origin/payment-success',
         'cancelUrl': '$origin/payment-cancel',
       });
@@ -37,6 +38,7 @@ class CheckoutService {
     String? checkoutId,
     String? sessionId,
     String? tier,
+    String? planId,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
@@ -49,6 +51,7 @@ class CheckoutService {
         if (checkoutId != null) 'checkoutId': checkoutId,
         if (sessionId != null) 'sessionId': sessionId,
         if (tier != null) 'tier': tier,
+        if (planId != null) 'planId': planId,
       });
 
       return Map<String, dynamic>.from(result.data as Map);

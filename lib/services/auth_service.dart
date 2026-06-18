@@ -17,12 +17,12 @@ class AuthService {
     return user != null && !user.isAnonymous;
   }
 
-  /// Whether the user has an active paid subscription (pro or elite).
+  /// Whether the user has an active paid subscription.
   bool hasPaidSubscription(Map<String, dynamic>? userData) {
     if (userData == null) return false;
     final tier = userData['subscriptionTier'] as String? ?? 'free';
     final status = userData['subscriptionStatus'] as String? ?? 'active';
-    return status == 'active' && (tier == 'pro' || tier == 'elite');
+    return status == 'active' && tier != 'free';
   }
 
   /// Live stream of the signed-in user's Firestore profile (null for guests).

@@ -42,7 +42,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
         params['session_id'] ??
         params['sessionId'] ??
         params['id'];
-    final tier = params['tier'];
+    final planId = params['planId'] ?? params['tier'];
 
     try {
       await FirebaseAuth.instance.authStateChanges().first;
@@ -53,7 +53,8 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
           await _checkoutService.completeCheckout(
             checkoutId: checkoutId,
             sessionId: checkoutId,
-            tier: tier,
+            planId: planId,
+            tier: planId,
           );
           lastError = null;
           break;
