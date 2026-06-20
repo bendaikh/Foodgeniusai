@@ -39,6 +39,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
   // DodoPayment Configuration
   final TextEditingController _dodoApiKeyController = TextEditingController();
   final TextEditingController _dodoBusinessIdController = TextEditingController();
+  final TextEditingController _dodoWebhookSecretController = TextEditingController();
   bool _dodoTestMode = true;
   
   bool _obscureKeys = true;
@@ -444,6 +445,17 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
               labelText: 'Business ID',
               hintText: 'bus_...',
               helperText: 'Your DodoPayments Business ID',
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _dodoWebhookSecretController,
+            obscureText: _obscureKeys,
+            decoration: const InputDecoration(
+              labelText: 'Webhook Secret',
+              hintText: 'whsec_...',
+              helperText:
+                  'From DodoPayments Dashboard → Webhooks. Endpoint: https://us-central1-gourmetai-c432b.cloudfunctions.net/dodoPaymentsWebhook',
             ),
           ),
           const SizedBox(height: 16),
@@ -1169,6 +1181,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
         setState(() {
           _dodoApiKeyController.text = data?['dodo_api_key'] ?? '';
           _dodoBusinessIdController.text = data?['dodo_business_id'] ?? '';
+          _dodoWebhookSecretController.text = data?['dodo_webhook_secret'] ?? '';
           _dodoTestMode = data?['dodo_test_mode'] ?? true;
         });
       }
@@ -1193,6 +1206,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
         apiKey: _dodoApiKeyController.text.trim(),
         businessId: _dodoBusinessIdController.text.trim(),
         testMode: _dodoTestMode,
+        webhookSecret: _dodoWebhookSecretController.text.trim(),
       );
 
       if (mounted) {
@@ -1246,6 +1260,7 @@ class _AdminSettingsPageState extends State<AdminSettingsPage> {
           apiKey: _dodoApiKeyController.text.trim(),
           businessId: _dodoBusinessIdController.text.trim(),
           testMode: _dodoTestMode,
+          webhookSecret: _dodoWebhookSecretController.text.trim(),
         );
       } catch (e) {
         print('DodoPayment config save failed (testing anyway): $e');

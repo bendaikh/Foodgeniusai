@@ -49,6 +49,7 @@ class DodoPaymentService {
     required String apiKey,
     required String businessId,
     required bool testMode,
+    String? webhookSecret,
   }) async {
     applyConfiguration(
       apiKey: apiKey,
@@ -64,6 +65,8 @@ class DodoPaymentService {
         'dodo_api_key': _apiKey,
         'dodo_business_id': _businessId,
         'dodo_test_mode': _isTestMode,
+        if (webhookSecret != null && webhookSecret.trim().isNotEmpty)
+          'dodo_webhook_secret': webhookSecret.trim(),
         'updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {

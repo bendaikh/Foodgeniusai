@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
@@ -145,6 +146,155 @@ async function fetchCheckoutById(baseUrl, headers, checkoutId) {
   const checkoutText = await checkoutResponse.text();
   if (!checkoutResponse.ok) return null;
   return JSON.parse(checkoutText);
+}
+
+async function fetchPaymentById(baseUrl, headers, paymentId) {
+  const response = await fetch(`${baseUrl}/payments/${paymentId}`, { headers });
+  const text = await response.text();
+  if (!response.ok) return null;
+  return JSON.parse(text);
+}
+
+async function fetchSubscriptionById(baseUrl, headers, subscriptionId) {
+  const response = await fetch(`${baseUrl}/subscriptions/${subscriptionId}`, {
+    headers,
+  });
+  const text = await response.text();
+  if (!response.ok) return null;
+  return JSON.parse(text);
+}
+
+function isRedirectStatusPaid(status) {
+  const normalized = (status || '').toLowerCase();
+  return ['succeeded', 'success', 'completed', 'paid', 'active'].includes(normalized);
+}
+
+function isPaymentRecordPaid(payment) {
+  const status = (payment.status || payment.payment_status || '').toLowerCase();
+  return ['succeeded', 'success', 'completed', 'paid'].includes(status);
+}
+
+function isSubscriptionRecordActive(subscription) {
+  const status = (subscription.status || '').toLowerCase();
+  return ['active', 'trialing', 'succeeded', 'success'].includes(status);
+}
+
+function extractTierFromMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return null;
+  return metadata.planId || metadata.tier || metadata.subscriptionTier || null;
+}
+
+async function activateUserSubscription(uid, tier, extraFields = {}) {
+  await getFirestore()
+    .collection('users')
+    .doc(uid)
+    .set(
+      {
+        subscriptionTier: tier,
+        subscriptionStatus: 'active',
+        subscriptionUpdatedAt: new Date(),
+        ...extraFields,
+      },
+      { merge: true },
+    );
+}
+
+async function markPendingCheckoutCompleted(uid, checkoutId) {
+  if (!checkoutId) return;
+  await getFirestore()
+    .collection('pending_checkouts')
+    .doc(`${uid}_${checkoutId}`)
+    .set(
+      {
+        status: 'completed',
+        completedAt: new Date(),
+      },
+      { merge: true },
+    );
+}
+
+async function findRecentPendingCheckout(uid) {
+  const pendingSnap = await getFirestore()
+    .collection('pending_checkouts')
+    .where('userId', '==', uid)
+    .limit(10)
+    .get();
+
+  if (pendingSnap.empty) return null;
+
+  const sorted = pendingSnap.docs.sort((a, b) => {
+    const aTime = a.data().createdAt?.toMillis?.() ?? 0;
+    const bTime = b.data().createdAt?.toMillis?.() ?? 0;
+    return bTime - aTime;
+  });
+
+  return sorted[0];
+}
+
+function verifyDodoWebhookSignature(rawBody, headers, secret) {
+  if (!secret) return true;
+
+  const webhookId = headers['webhook-id'];
+  const webhookTimestamp = headers['webhook-timestamp'];
+  const webhookSignature = headers['webhook-signature'];
+
+  if (!webhookId || !webhookTimestamp || !webhookSignature) {
+    return false;
+  }
+
+  const keyMaterial = secret.startsWith('whsec_') ? secret.slice(6) : secret;
+  let key;
+  try {
+    key = Buffer.from(keyMaterial, 'base64');
+  } catch (_) {
+    key = Buffer.from(keyMaterial, 'utf8');
+  }
+
+  const payload =
+    typeof rawBody === 'string' ? rawBody : rawBody.toString('utf8');
+  const signedContent = `${webhookId}.${webhookTimestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', key)
+    .update(signedContent)
+    .digest('base64');
+
+  return webhookSignature.split(' ').some((entry) => {
+    const parts = entry.split(',');
+    return parts.length > 1 && parts.slice(1).join(',') === expectedSignature;
+  });
+}
+
+async function activateSubscriptionFromWebhookPayload(payload) {
+  const metadata =
+    payload.metadata ||
+    payload.checkout?.metadata ||
+    payload.checkout_metadata ||
+    {};
+  const userId = metadata.userId;
+  const tier = extractTierFromMetadata(metadata);
+
+  if (!userId) {
+    console.warn('Webhook payload missing metadata.userId');
+    return;
+  }
+
+  if (!tier || tier === 'free') {
+    console.warn('Webhook payload missing subscription tier metadata');
+    return;
+  }
+
+  await activateUserSubscription(userId, tier, {
+    dodoPaymentId: payload.payment_id || null,
+    dodoSubscriptionId: payload.subscription_id || null,
+    dodoCheckoutId: payload.checkout_id || metadata.checkoutId || null,
+  });
+
+  const checkoutId =
+    payload.checkout_id ||
+    metadata.checkoutId ||
+    payload.checkout?.checkout_id ||
+    null;
+  await markPendingCheckoutCompleted(userId, checkoutId);
 }
 
 exports.dodoPaymentsProxy = onRequest({ cors: true }, async (req, res) => {
@@ -354,6 +504,9 @@ async function performCompleteUserCheckout({
   uid,
   checkoutId,
   sessionId,
+  paymentId,
+  subscriptionId,
+  status,
   tier,
   planId,
 }) {
@@ -365,9 +518,17 @@ async function performCompleteUserCheckout({
   }
 
   let resolvedTier = tier || planId || null;
+  let paid = false;
   let checkoutData = null;
+  let pendingDoc = null;
+  let pendingRef = null;
 
   if (resolvedCheckoutId) {
+    pendingRef = getFirestore()
+      .collection('pending_checkouts')
+      .doc(`${uid}_${resolvedCheckoutId}`);
+    pendingDoc = await pendingRef.get();
+
     checkoutData = await fetchCheckoutById(
       dodo.baseUrl,
       dodo.headers,
@@ -382,34 +543,94 @@ async function performCompleteUserCheckout({
         resolvedCheckoutId,
       );
     }
+
+    if (checkoutData && isCheckoutPaid(checkoutData)) {
+      paid = true;
+      resolvedTier =
+        resolvedTier || extractTierFromMetadata(checkoutData.metadata);
+    }
   }
 
-  const pendingRef = resolvedCheckoutId
-    ? getFirestore()
-        .collection('pending_checkouts')
-        .doc(`${uid}_${resolvedCheckoutId}`)
-    : null;
+  if (!paid && paymentId) {
+    const paymentData = await fetchPaymentById(
+      dodo.baseUrl,
+      dodo.headers,
+      paymentId,
+    );
 
-  const pendingDoc = pendingRef ? await pendingRef.get() : null;
-  if (!resolvedTier && pendingDoc?.exists) {
-    resolvedTier = pendingDoc.data().planId || pendingDoc.data().tier;
+    if (paymentData && isPaymentRecordPaid(paymentData)) {
+      paid = true;
+      resolvedTier = resolvedTier || extractTierFromMetadata(paymentData.metadata);
+    } else if (isRedirectStatusPaid(status)) {
+      paid = true;
+    }
   }
 
-  if (checkoutData) {
+  if (!paid && subscriptionId) {
+    const subscriptionData = await fetchSubscriptionById(
+      dodo.baseUrl,
+      dodo.headers,
+      subscriptionId,
+    );
+
+    if (subscriptionData && isSubscriptionRecordActive(subscriptionData)) {
+      paid = true;
+      resolvedTier =
+        resolvedTier || extractTierFromMetadata(subscriptionData.metadata);
+    } else if (isRedirectStatusPaid(status)) {
+      paid = true;
+    }
+  }
+
+  if (!pendingDoc && !resolvedCheckoutId) {
+    const recentPending = await findRecentPendingCheckout(uid);
+    if (recentPending) {
+      pendingDoc = recentPending;
+      pendingRef = recentPending.ref;
+      resolvedTier =
+        resolvedTier || pendingDoc.data().planId || pendingDoc.data().tier;
+
+      if (pendingDoc.data().status === 'completed') {
+        paid = true;
+      } else if (!paid && pendingDoc.data().checkoutId) {
+        checkoutData = await fetchCheckoutById(
+          dodo.baseUrl,
+          dodo.headers,
+          pendingDoc.data().checkoutId,
+        );
+        if (checkoutData && isCheckoutPaid(checkoutData)) {
+          paid = true;
+        }
+      }
+    }
+  } else if (pendingDoc?.exists) {
     resolvedTier =
-      resolvedTier ||
-      checkoutData.metadata?.planId ||
-      checkoutData.metadata?.tier ||
-      checkoutData.metadata?.subscriptionTier;
+      resolvedTier || pendingDoc.data().planId || pendingDoc.data().tier;
+    if (pendingDoc.data().status === 'completed') {
+      paid = true;
+    }
+  }
+
+  if (!paid) {
+    const userDoc = await getFirestore().collection('users').doc(uid).get();
+    const userData = userDoc.data() || {};
+    if (
+      userData.subscriptionStatus === 'active' &&
+      userData.subscriptionTier &&
+      userData.subscriptionTier !== 'free'
+    ) {
+      return {
+        success: true,
+        subscriptionTier: userData.subscriptionTier,
+        subscriptionStatus: 'active',
+        alreadyActive: true,
+      };
+    }
   }
 
   if (!resolvedTier || resolvedTier === 'free') {
     throw new HttpsError('invalid-argument', 'Unable to determine subscription plan.');
   }
-
-  const paid =
-    (checkoutData && isCheckoutPaid(checkoutData)) ||
-    (pendingDoc?.exists && pendingDoc.data().status === 'completed');
 
   if (!paid) {
     throw new HttpsError(
@@ -418,27 +639,15 @@ async function performCompleteUserCheckout({
     );
   }
 
-  await getFirestore()
-    .collection('users')
-    .doc(uid)
-    .set(
-      {
-        subscriptionTier: resolvedTier,
-        subscriptionStatus: 'active',
-        subscriptionUpdatedAt: new Date(),
-      },
-      { merge: true },
-    );
+  await activateUserSubscription(uid, resolvedTier, {
+    ...(paymentId ? { dodoPaymentId: paymentId } : {}),
+    ...(subscriptionId ? { dodoSubscriptionId: subscriptionId } : {}),
+    ...(resolvedCheckoutId ? { dodoCheckoutId: resolvedCheckoutId } : {}),
+  });
 
-  if (pendingRef) {
-    await pendingRef.set(
-      {
-        status: 'completed',
-        completedAt: new Date(),
-      },
-      { merge: true },
-    );
-  }
+  const checkoutIdToComplete =
+    resolvedCheckoutId || pendingDoc?.data()?.checkoutId || null;
+  await markPendingCheckoutCompleted(uid, checkoutIdToComplete);
 
   return {
     success: true,
@@ -474,12 +683,99 @@ exports.completeUserCheckout = onCall({ region: 'us-central1' }, async (request)
     throw new HttpsError('unauthenticated', 'You must be signed in to complete checkout.');
   }
 
-  const { checkoutId, sessionId, tier, planId } = request.data || {};
+  const {
+    checkoutId,
+    sessionId,
+    paymentId,
+    subscriptionId,
+    status,
+    tier,
+    planId,
+  } = request.data || {};
   return performCompleteUserCheckout({
     uid: request.auth.uid,
     checkoutId,
     sessionId,
+    paymentId,
+    subscriptionId,
+    status,
     tier,
     planId,
   });
 });
+
+exports.dodoPaymentsWebhook = onRequest({ cors: false }, async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  try {
+    const dodo = await loadDodoSettings();
+    if (dodo.error) {
+      res.status(dodo.status || 500).send(dodo.error);
+      return;
+    }
+
+    const rawBody = req.rawBody
+      ? req.rawBody.toString('utf8')
+      : JSON.stringify(req.body || {});
+    const webhookSecret = dodo.settings.dodo_webhook_secret;
+
+    if (
+      webhookSecret &&
+      !verifyDodoWebhookSignature(rawBody, req.headers, webhookSecret)
+    ) {
+      console.error('Invalid DodoPayments webhook signature');
+      res.status(401).send('Invalid signature');
+      return;
+    }
+
+    res.status(200).send('OK');
+
+    const event = JSON.parse(rawBody);
+    const eventType = event.type;
+    const payload = event.data || {};
+
+    switch (eventType) {
+      case 'payment.succeeded':
+      case 'subscription.active':
+      case 'subscription.updated':
+      case 'subscription.renewed':
+        await activateSubscriptionFromWebhookPayload(payload);
+        break;
+      case 'subscription.cancelled':
+      case 'subscription.canceled':
+        await handleSubscriptionCancelled(payload);
+        break;
+      default:
+        console.log(`Unhandled DodoPayments webhook event: ${eventType}`);
+    }
+  } catch (error) {
+    console.error('DodoPayments webhook error:', error);
+    if (!res.headersSent) {
+      res.status(500).send('Webhook processing failed');
+    }
+  }
+});
+
+async function handleSubscriptionCancelled(payload) {
+  const metadata =
+    payload.metadata ||
+    payload.checkout?.metadata ||
+    payload.checkout_metadata ||
+    {};
+  const userId = metadata.userId;
+  if (!userId) return;
+
+  await getFirestore()
+    .collection('users')
+    .doc(userId)
+    .set(
+      {
+        subscriptionStatus: 'cancelled',
+        subscriptionUpdatedAt: new Date(),
+      },
+      { merge: true },
+    );
+}

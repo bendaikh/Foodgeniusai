@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../models/recipe_model.dart';
+import '../services/auth_service.dart';
 import '../services/checkout_service.dart';
+import '../services/pending_checkout_store.dart';
 import '../services/pending_recipe_store.dart';
 import '../theme/app_theme.dart';
 import 'auth_wrapper.dart';
@@ -19,6 +21,7 @@ class PaymentSuccessPage extends StatefulWidget {
 
 class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
   final CheckoutService _checkoutService = CheckoutService();
+  final AuthService _authService = AuthService();
   String? _error;
   bool _isProcessing = true;
 
@@ -35,14 +38,38 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
     return {};
   }
 
+  Future<void> _waitForActiveSubscription() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    for (var attempt = 0; attempt < 15; attempt++) {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (_authService.hasPaidSubscription(doc.data())) {
+        return;
+      }
+      await Future.delayed(Duration(milliseconds: 400 + (attempt * 100)));
+    }
+  }
+
   Future<void> _handlePaymentSuccess() async {
     final params = _queryParams();
+    final storedCheckoutId = await PendingCheckoutStore.instance.load();
     final checkoutId = params['checkout_id'] ??
         params['checkoutId'] ??
         params['session_id'] ??
         params['sessionId'] ??
-        params['id'];
+        storedCheckoutId;
+    final paymentId = params['payment_id'] ?? params['paymentId'];
+    final subscriptionId =
+        params['subscription_id'] ?? params['subscriptionId'];
+    final status = params['status'];
     final planId = params['planId'] ?? params['tier'];
+
+    setState(() {
+      _isProcessing = true;
+      _error = null;
+    });
 
     try {
       await FirebaseAuth.instance.authStateChanges().first;
@@ -53,6 +80,9 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
           await _checkoutService.completeCheckout(
             checkoutId: checkoutId,
             sessionId: checkoutId,
+            paymentId: paymentId,
+            subscriptionId: subscriptionId,
+            status: status,
             planId: planId,
             tier: planId,
           );
@@ -67,14 +97,18 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
       }
 
       if (lastError != null) {
-        throw lastError!;
+        throw lastError;
       }
 
+      await _waitForActiveSubscription();
+
+      await PendingCheckoutStore.instance.clear();
       final recipe = PendingRecipeStore.instance.load();
       if (!mounted) return;
 
       if (recipe != null) {
         await PendingRecipeStore.instance.clear();
+        if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (context) => RecipeDetailPage(recipe: recipe),

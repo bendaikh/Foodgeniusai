@@ -2,6 +2,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import 'pending_checkout_store.dart';
+
 class CheckoutService {
   FirebaseFunctions get _functions =>
       FirebaseFunctions.instanceFor(region: 'us-central1');
@@ -25,8 +27,12 @@ class CheckoutService {
 
       final data = Map<String, dynamic>.from(result.data as Map);
       final checkoutUrl = data['checkoutUrl'] as String?;
+      final checkoutId = data['checkoutId'] as String?;
       if (checkoutUrl == null || checkoutUrl.isEmpty) {
         throw Exception('Checkout URL was not returned by the server.');
+      }
+      if (checkoutId != null && checkoutId.isNotEmpty) {
+        await PendingCheckoutStore.instance.save(checkoutId);
       }
       return checkoutUrl;
     } on FirebaseFunctionsException catch (e) {
@@ -37,6 +43,9 @@ class CheckoutService {
   Future<Map<String, dynamic>> completeCheckout({
     String? checkoutId,
     String? sessionId,
+    String? paymentId,
+    String? subscriptionId,
+    String? status,
     String? tier,
     String? planId,
   }) async {
@@ -50,6 +59,9 @@ class CheckoutService {
           await _functions.httpsCallable('completeUserCheckout').call({
         if (checkoutId != null) 'checkoutId': checkoutId,
         if (sessionId != null) 'sessionId': sessionId,
+        if (paymentId != null) 'paymentId': paymentId,
+        if (subscriptionId != null) 'subscriptionId': subscriptionId,
+        if (status != null) 'status': status,
         if (tier != null) 'tier': tier,
         if (planId != null) 'planId': planId,
       });
