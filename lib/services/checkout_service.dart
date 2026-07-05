@@ -17,12 +17,16 @@ class CheckoutService {
     final origin =
         kIsWeb ? Uri.base.origin : 'https://gourmetai-c432b.web.app';
 
+    final mobileSource = kIsWeb ? '' : '?source=mobile';
+    final successUrl = '$origin/payment-success$mobileSource';
+    final cancelUrl = '$origin/payment-cancel$mobileSource';
+
     try {
       final result = await _functions.httpsCallable('createUserCheckout').call({
         'planId': planId,
         if (tier != null) 'tier': tier,
-        'successUrl': '$origin/payment-success',
-        'cancelUrl': '$origin/payment-cancel',
+        'successUrl': successUrl,
+        'cancelUrl': cancelUrl,
       });
 
       final data = Map<String, dynamic>.from(result.data as Map);

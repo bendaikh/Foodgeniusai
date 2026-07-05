@@ -58,6 +58,7 @@ class SubscriptionPlanService {
     bool isPopular = false,
     bool isActive = true,
     int? sortOrder,
+    int monthlyGenerationLimit = 0,
   }) async {
     await DodoPaymentService().loadConfiguration();
     if (!DodoPaymentService().isConfigured) {
@@ -97,6 +98,7 @@ class SubscriptionPlanService {
       isActive: isActive,
       isPopular: isPopular,
       sortOrder: nextSortOrder,
+      monthlyGenerationLimit: monthlyGenerationLimit,
     );
 
     await docRef.set(plan.toMap());
@@ -119,5 +121,11 @@ class SubscriptionPlanService {
 
   Future<void> deletePlan(String planId) async {
     await _firestore.collection(_collection).doc(planId).delete();
+  }
+
+  Future<SubscriptionPlanModel?> getPlanById(String planId) async {
+    final doc = await _firestore.collection(_collection).doc(planId).get();
+    if (!doc.exists) return null;
+    return SubscriptionPlanModel.fromFirestore(doc);
   }
 }

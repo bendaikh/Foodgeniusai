@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 
 initializeApp();
@@ -193,10 +193,126 @@ async function activateUserSubscription(uid, tier, extraFields = {}) {
         subscriptionTier: tier,
         subscriptionStatus: 'active',
         subscriptionUpdatedAt: new Date(),
+        monthlyGenerationsUsed: 0,
+        generationPeriodStart: new Date(),
         ...extraFields,
       },
       { merge: true },
     );
+}
+
+function startOfCurrentMonth(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function isSameMonth(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+async function getPlanMonthlyGenerationLimit(planId) {
+  if (!planId || planId === 'free') return 0;
+
+  const planDoc = await getFirestore()
+    .collection('subscription_plans')
+    .doc(planId)
+    .get();
+
+  if (planDoc.exists) {
+    const limit = planDoc.data().monthlyGenerationLimit;
+    if (typeof limit === 'number') return limit;
+  }
+
+  if (planId === 'pro') return 25;
+  if (planId === 'elite') return 50;
+  return 0;
+}
+
+async function getRecipeGenerationStatus(uid) {
+  const userDoc = await getFirestore().collection('users').doc(uid).get();
+  const userData = userDoc.data() || {};
+  const tier = userData.subscriptionTier || 'free';
+  const status = userData.subscriptionStatus || 'active';
+
+  if (status !== 'active') {
+    return { limit: 0, used: 0, remaining: 0, tier, planId: tier };
+  }
+
+  const limit = await getPlanMonthlyGenerationLimit(tier);
+  const now = new Date();
+  let used = userData.monthlyGenerationsUsed || 0;
+  const periodStart = userData.generationPeriodStart?.toDate?.() || null;
+
+  if (periodStart && !isSameMonth(periodStart, now)) {
+    used = 0;
+  }
+
+  return {
+    limit,
+    used,
+    remaining: Math.max(0, limit - used),
+    tier,
+    planId: tier,
+  };
+}
+
+async function consumeRecipeGeneration(uid) {
+  const db = getFirestore();
+  const userRef = db.collection('users').doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const userDoc = await tx.get(userRef);
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', 'User profile not found.');
+    }
+
+    const userData = userDoc.data();
+    const tier = userData.subscriptionTier || 'free';
+    const status = userData.subscriptionStatus || 'active';
+
+    if (status !== 'active') {
+      throw new HttpsError('permission-denied', 'Your subscription is not active.');
+    }
+
+    const planLimit = await getPlanMonthlyGenerationLimit(tier);
+    if (planLimit <= 0) {
+      throw new HttpsError(
+        'permission-denied',
+        'Subscribe to a plan to generate AI recipes.',
+      );
+    }
+
+    const now = new Date();
+    let used = userData.monthlyGenerationsUsed || 0;
+    let periodStart = userData.generationPeriodStart?.toDate?.() || null;
+
+    if (!periodStart || !isSameMonth(periodStart, now)) {
+      used = 0;
+      periodStart = startOfCurrentMonth(now);
+    }
+
+    if (used >= planLimit) {
+      throw new HttpsError(
+        'resource-exhausted',
+        `You've used all ${planLimit} AI recipe generations for this month. Your limit resets at the start of next month.`,
+      );
+    }
+
+    const newUsed = used + 1;
+    tx.update(userRef, {
+      monthlyGenerationsUsed: newUsed,
+      generationPeriodStart: periodStart,
+      totalRecipesGenerated: FieldValue.increment(1),
+      apiUsageCount: FieldValue.increment(1),
+    });
+
+    return {
+      limit: planLimit,
+      used: newUsed,
+      remaining: planLimit - newUsed,
+      tier,
+      planId: tier,
+    };
+  });
 }
 
 async function markPendingCheckoutCompleted(uid, checkoutId) {
@@ -702,6 +818,30 @@ exports.completeUserCheckout = onCall({ region: 'us-central1' }, async (request)
     tier,
     planId,
   });
+});
+
+exports.getRecipeGenerationStatus = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in.');
+  }
+
+  if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Create an account to track recipe generations.');
+  }
+
+  return getRecipeGenerationStatus(request.auth.uid);
+});
+
+exports.consumeRecipeGeneration = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in.');
+  }
+
+  if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Create an account to generate recipes.');
+  }
+
+  return consumeRecipeGeneration(request.auth.uid);
 });
 
 exports.dodoPaymentsWebhook = onRequest({ cors: false }, async (req, res) => {

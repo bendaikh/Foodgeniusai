@@ -113,6 +113,8 @@ class AuthService {
         'createdAt': FieldValue.serverTimestamp(),
         'totalRecipesGenerated': 0,
         'apiUsageCount': 0,
+        'monthlyGenerationsUsed': 0,
+        'generationPeriodStart': FieldValue.serverTimestamp(),
         'role': 'user',
       }, SetOptions(merge: true));
 

@@ -4,6 +4,7 @@ import '../services/ai_settings_service.dart';
 import '../services/openai_service.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
+import '../services/generation_limit_service.dart';
 import '../models/recipe_model.dart';
 import '../widgets/cooking_animation.dart';
 import 'my_creations_page.dart';
@@ -20,6 +21,7 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
   final AISettingsService _settingsService = AISettingsService();
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
+  final GenerationLimitService _generationLimitService = GenerationLimitService();
   
   final TextEditingController _cravingController = TextEditingController();
   final TextEditingController _servingsController =
@@ -77,6 +79,11 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         throw Exception('OpenAI API key not configured. Please ask admin to configure it in Admin Settings.');
       }
 
+      final user = _authService.currentUser;
+      if (user != null && !user.isAnonymous) {
+        await _generationLimitService.consumeGeneration();
+      }
+
       // Create OpenAI service
       final openaiService = OpenAIService(settings);
 
@@ -88,8 +95,6 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         servings: int.tryParse(_servingsController.text) ?? 2,
         portionSize: _selectedPortion,
       );
-
-      final user = _authService.currentUser;
 
       // Generate realistic food image for ALL users (including guests)
       String? imageUrl;

@@ -14,6 +14,7 @@ class SubscriptionPlanModel {
   final bool isActive;
   final bool isPopular;
   final int sortOrder;
+  final int monthlyGenerationLimit;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -31,9 +32,15 @@ class SubscriptionPlanModel {
     this.isActive = true,
     this.isPopular = false,
     this.sortOrder = 0,
+    this.monthlyGenerationLimit = 0,
     this.createdAt,
     this.updatedAt,
   });
+
+  String get generationLimitLabel {
+    if (monthlyGenerationLimit <= 0) return '';
+    return '$monthlyGenerationLimit AI Recipe Generation${monthlyGenerationLimit == 1 ? '' : 's'} per month';
+  }
 
   int get priceCents => (price * 100).round();
 
@@ -58,6 +65,7 @@ class SubscriptionPlanModel {
       isActive: data['isActive'] as bool? ?? true,
       isPopular: data['isPopular'] as bool? ?? false,
       sortOrder: data['sortOrder'] as int? ?? 0,
+      monthlyGenerationLimit: data['monthlyGenerationLimit'] as int? ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -77,6 +85,7 @@ class SubscriptionPlanModel {
       'isActive': isActive,
       'isPopular': isPopular,
       'sortOrder': sortOrder,
+      'monthlyGenerationLimit': monthlyGenerationLimit,
       'updatedAt': FieldValue.serverTimestamp(),
       if (createdAt == null) 'createdAt': FieldValue.serverTimestamp(),
     };
@@ -95,6 +104,7 @@ class SubscriptionPlanModel {
     bool? isActive,
     bool? isPopular,
     int? sortOrder,
+    int? monthlyGenerationLimit,
   }) {
     return SubscriptionPlanModel(
       id: id,
@@ -110,6 +120,8 @@ class SubscriptionPlanModel {
       isActive: isActive ?? this.isActive,
       isPopular: isPopular ?? this.isPopular,
       sortOrder: sortOrder ?? this.sortOrder,
+      monthlyGenerationLimit:
+          monthlyGenerationLimit ?? this.monthlyGenerationLimit,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );

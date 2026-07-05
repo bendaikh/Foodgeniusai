@@ -634,6 +634,17 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
               ],
             ],
           ),
+          if (plan.monthlyGenerationLimit > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              plan.generationLimitLabel,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           if (plan.features.isNotEmpty) ...[
             const SizedBox(height: 12),
             ...plan.features.take(3).map(
@@ -818,6 +829,11 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
     final featuresController = TextEditingController(
       text: existing?.features.join('\n') ?? '',
     );
+    final generationLimitController = TextEditingController(
+      text: existing != null && existing.monthlyGenerationLimit > 0
+          ? existing.monthlyGenerationLimit.toString()
+          : '',
+    );
     var isPopular = existing?.isPopular ?? false;
     var isActive = existing?.isActive ?? true;
     var isSaving = false;
@@ -920,6 +936,17 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
                   ),
                   const SizedBox(height: 12),
                   TextField(
+                    controller: generationLimitController,
+                    decoration: const InputDecoration(
+                      labelText: 'Monthly AI recipe generations *',
+                      hintText: 'e.g., 10, 25, 50',
+                      helperText:
+                          'Enforced automatically across the app and API',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
                     controller: featuresController,
                     decoration: const InputDecoration(
                       labelText: 'Features (one per line)',
@@ -981,6 +1008,20 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
                           .map((f) => f.trim())
                           .where((f) => f.isNotEmpty)
                           .toList();
+                      final generationLimit =
+                          int.tryParse(generationLimitController.text.trim()) ??
+                              0;
+                      if (generationLimit <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Monthly AI recipe generations must be greater than 0',
+                            ),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
 
                       setDialogState(() => isSaving = true);
 
@@ -991,6 +1032,7 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
                               name: name,
                               description: descriptionController.text.trim(),
                               features: features,
+                              monthlyGenerationLimit: generationLimit,
                               icon: iconController.text.trim().isEmpty
                                   ? '💎'
                                   : iconController.text.trim(),
@@ -1016,6 +1058,7 @@ class _AdminPaymentsPageState extends State<AdminPaymentsPage> {
                             price: price,
                             currency: currencyController.text.trim().toUpperCase(),
                             features: features,
+                            monthlyGenerationLimit: generationLimit,
                             icon: iconController.text.trim().isEmpty
                                 ? '💎'
                                 : iconController.text.trim(),

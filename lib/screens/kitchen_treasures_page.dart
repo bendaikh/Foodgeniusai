@@ -5,6 +5,7 @@ import '../services/ai_settings_service.dart';
 import '../services/openai_service.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
+import '../services/generation_limit_service.dart';
 import '../models/recipe_model.dart';
 import '../widgets/cooking_animation.dart';
 import '../widgets/web_image.dart';
@@ -23,6 +24,7 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
   final AISettingsService _settingsService = AISettingsService();
   final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
+  final GenerationLimitService _generationLimitService = GenerationLimitService();
   
   bool _isGenerating = false;
   List<RecipeModel> _generatedRecipes = [];
@@ -72,8 +74,12 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
         throw Exception('OpenAI API key not configured. Please ask admin to configure it in Admin Settings.');
       }
 
-      final openaiService = OpenAIService(settings);
       final user = _authService.currentUser;
+      if (user != null && !user.isAnonymous) {
+        await _generationLimitService.consumeGeneration();
+      }
+
+      final openaiService = OpenAIService(settings);
 
       final recipes = await openaiService.generateRecipesFromIngredients(
         ingredients: _ingredients,
