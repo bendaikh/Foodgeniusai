@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/recipe_model.dart';
 import '../services/auth_service.dart';
 import '../services/checkout_service.dart';
 import '../services/pending_checkout_store.dart';
-import '../services/pending_recipe_store.dart';
+import '../services/pending_recipe_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_wrapper.dart';
 import 'landing_page.dart';
@@ -25,6 +26,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
   String? _error;
   bool _isProcessing = true;
   bool _isSuccess = false;
+  RecipeModel? _claimedRecipe;
 
   @override
   void initState() {
@@ -58,6 +60,17 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
     }
   }
 
+  Future<void> _claimPendingRecipe() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final recipe = await PendingRecipeService.instance.claimAndPersist(
+      userId: user.uid,
+    );
+    if (!mounted) return;
+    setState(() => _claimedRecipe = recipe);
+  }
+
   Future<void> _handlePaymentSuccess() async {
     final params = _queryParams();
     final storedCheckoutId = await PendingCheckoutStore.instance.load();
@@ -76,6 +89,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
       _isProcessing = true;
       _error = null;
       _isSuccess = false;
+      _claimedRecipe = null;
     });
 
     try {
@@ -109,36 +123,16 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
         }
 
         await _waitForActiveSubscription();
+        await _claimPendingRecipe();
       }
 
       await PendingCheckoutStore.instance.clear();
       if (!mounted) return;
 
-      if (_isMobileCallback) {
-        setState(() {
-          _isProcessing = false;
-          _isSuccess = true;
-        });
-        return;
-      }
-
-      final recipe = PendingRecipeStore.instance.load();
-      if (recipe != null) {
-        await PendingRecipeStore.instance.clear();
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (context) => RecipeDetailPage(recipe: recipe),
-          ),
-          (route) => false,
-        );
-        return;
-      }
-
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LandingPage()),
-        (route) => false,
-      );
+      setState(() {
+        _isProcessing = false;
+        _isSuccess = true;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -149,21 +143,29 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
     }
   }
 
-  Future<void> _openRecipeAnyway() async {
-    final recipe = PendingRecipeStore.instance.load();
-    await PendingRecipeStore.instance.clear();
+  Future<void> _openRecipe() async {
+    var recipe = _claimedRecipe;
+    recipe ??= await PendingRecipeService.instance.claimAndPersist();
+
     if (!mounted) return;
 
     if (recipe != null) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (context) => RecipeDetailPage(recipe: recipe),
+          builder: (context) => RecipeDetailPage(recipe: recipe!),
         ),
         (route) => false,
       );
       return;
     }
 
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LandingPage()),
+      (route) => false,
+    );
+  }
+
+  void _goHome() {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const AuthWrapper()),
       (route) => false,
@@ -191,9 +193,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
               padding: const EdgeInsets.all(32),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
-                child: _isMobileCallback
-                    ? _buildMobileCallbackContent()
-                    : _buildWebCallbackContent(),
+                child: _buildContent(),
               ),
             ),
           ),
@@ -202,7 +202,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
     );
   }
 
-  Widget _buildMobileCallbackContent() {
+  Widget _buildContent() {
     if (_isProcessing) {
       return _buildStatusCard(
         child: Column(
@@ -261,7 +261,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
             ),
             const SizedBox(height: 28),
             const Text(
-              'Payment Successful! 🎉',
+              'Payment Successful!',
               style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
@@ -280,9 +280,11 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'You can now close this page and return to the GourmetAI mobile app to continue using all premium features.',
-              style: TextStyle(
+            Text(
+              _isMobileCallback
+                  ? 'You can now close this window and return to the Gourmet AI app.'
+                  : 'You can now close this window and return to the Gourmet AI app, or continue below.',
+              style: const TextStyle(
                 color: AppTheme.greyText,
                 fontSize: 15,
                 height: 1.5,
@@ -300,14 +302,20 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
                   color: AppTheme.primaryGreen.withOpacity(0.25),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.smartphone, color: AppTheme.primaryGreen, size: 22),
-                  SizedBox(width: 12),
+                  Icon(
+                    _isMobileCallback ? Icons.smartphone : Icons.check_circle_outline,
+                    color: AppTheme.primaryGreen,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Switch back to the GourmetAI app — your premium access is ready.',
-                      style: TextStyle(
+                      _isMobileCallback
+                          ? 'Switch back to the Gourmet AI app — your premium access is ready.'
+                          : 'Your premium access is active. ${_claimedRecipe != null ? 'Your generated recipe is saved and ready.' : ''}',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
                         height: 1.4,
@@ -317,6 +325,23 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
                 ],
               ),
             ),
+            if (!_isMobileCallback) ...[
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _claimedRecipe != null ? _openRecipe : _goHome,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryGreen,
+                    foregroundColor: AppTheme.darkBackground,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: Text(
+                    _claimedRecipe != null ? 'View your recipe' : 'Continue to app',
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );
@@ -339,58 +364,22 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
             child: const Text('Try Again'),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'If payment went through, close this page and return to the app — your subscription may already be active.',
-            style: TextStyle(color: AppTheme.greyText, fontSize: 13),
+          Text(
+            _isMobileCallback
+                ? 'If payment went through, close this window and return to the app — your subscription may already be active.'
+                : 'If payment went through, your subscription may already be active.',
+            style: const TextStyle(color: AppTheme.greyText, fontSize: 13),
             textAlign: TextAlign.center,
           ),
+          if (!_isMobileCallback) ...[
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _openRecipe,
+              child: const Text('Go to my recipe'),
+            ),
+          ],
         ],
       ),
-    );
-  }
-
-  Widget _buildWebCallbackContent() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (_isProcessing) ...[
-          const CircularProgressIndicator(color: AppTheme.primaryGreen),
-          const SizedBox(height: 24),
-          const Text(
-            'Confirming your payment…',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Unlocking your recipe now.',
-            style: TextStyle(color: AppTheme.greyText),
-            textAlign: TextAlign.center,
-          ),
-        ] else ...[
-          const Icon(Icons.error_outline, color: Colors.orange, size: 56),
-          const SizedBox(height: 20),
-          Text(
-            _error ?? 'Something went wrong.',
-            style: const TextStyle(color: Colors.white),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _handlePaymentSuccess,
-            child: const Text('Try Again'),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: _openRecipeAnyway,
-            child: const Text('Go to my recipe'),
-          ),
-        ],
-      ],
     );
   }
 

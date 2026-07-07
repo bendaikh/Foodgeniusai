@@ -13,6 +13,8 @@ class PendingRecipeStore {
 
   RecipeModel? load() => null;
 
+  Future<RecipeModel?> loadAsync() async => null;
+
   Future<void> clear() async {}
 }
 

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin/screens/admin_dashboard_export.dart';
-import '../screens/user_account_page.dart';
-import 'landing_page.dart';
+import '../widgets/pending_recipe_restore_gate.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -29,7 +28,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final user = snapshot.data;
 
         if (user == null) {
-          return const LandingPage();
+          return const RestorableLandingPage();
         }
 
         return FutureBuilder<DocumentSnapshot>(
@@ -42,7 +41,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             if (userSnapshot.hasError ||
                 userSnapshot.data == null ||
                 !userSnapshot.data!.exists) {
-              return const LandingPage();
+              return const RestorableLandingPage();
             }
 
             final data =
@@ -51,7 +50,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             if (data?['role'] == 'admin') {
               return const AdminDashboard();
             }
-            return const LandingPage();
+            return const RestorableLandingPage();
           },
         );
       },

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/pending_recipe_service.dart';
 
 class UserAuthPage extends StatefulWidget {
   final bool isLogin;
@@ -72,6 +73,8 @@ class _UserAuthPageState extends State<UserAuthPage> {
       }
 
       if (mounted) {
+        await PendingRecipeService.instance.syncLocalToCloud();
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(_isLogin ? 'Welcome back!' : 'Account created successfully!'),

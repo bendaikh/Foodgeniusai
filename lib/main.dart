@@ -15,11 +15,33 @@ import 'screens/force_create_admin_page.dart';
 import 'screens/payment_success_page.dart';
 import 'screens/payment_cancel_page.dart';
 
+String _normalizePath(String path) {
+  var normalized = path;
+  if (normalized.isEmpty) return '/';
+  if (!normalized.startsWith('/')) normalized = '/$normalized';
+  while (normalized.length > 1 && normalized.endsWith('/')) {
+    normalized = normalized.substring(0, normalized.length - 1);
+  }
+  return normalized;
+}
+
+bool _looksLikePaymentCallback(Uri uri) {
+  final params = uri.queryParameters;
+  return params.containsKey('checkout_id') ||
+      params.containsKey('checkoutId') ||
+      params.containsKey('payment_id') ||
+      params.containsKey('paymentId') ||
+      params.containsKey('subscription_id') ||
+      params.containsKey('subscriptionId');
+}
+
 String _resolveInitialRoute() {
   if (kIsWeb) {
-    final path = Uri.base.path;
+    final uri = Uri.base;
+    final path = _normalizePath(uri.path);
     if (path == '/payment-success') return '/payment-success';
     if (path == '/payment-cancel') return '/payment-cancel';
+    if (_looksLikePaymentCallback(uri)) return '/payment-success';
   }
   return '/';
 }

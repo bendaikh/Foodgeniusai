@@ -6,7 +6,7 @@ import '../widgets/web_image.dart';
 import '../models/recipe_model.dart';
 import '../utils/url_launcher_helper.dart' as url_helper;
 import '../services/auth_service.dart';
-import '../services/pending_recipe_store.dart';
+import '../services/pending_recipe_service.dart';
 import 'pricing_page.dart';
 import 'user_auth_page.dart';
 
@@ -38,6 +38,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     _checkedInstructions = {
       for (var i = 0; i < widget.recipe.instructions.length; i++) i: false
     };
+    if (widget.recipe.userId == 'guest') {
+      PendingRecipeService.instance.save(widget.recipe);
+    }
   }
 
   bool _isAuthenticated = false;
@@ -887,8 +890,12 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
         : _buildLoginPrompt(contentType);
   }
 
+  Future<void> _savePendingRecipe() async {
+    await PendingRecipeService.instance.save(widget.recipe);
+  }
+
   Future<void> _openPricingPage() async {
-    await PendingRecipeStore.instance.save(widget.recipe);
+    await _savePendingRecipe();
     if (!mounted) return;
     Navigator.push(
       context,
@@ -1030,7 +1037,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             ),
             const SizedBox(width: 16),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
+                await _savePendingRecipe();
+                if (!context.mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1052,7 +1061,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             ),
             const SizedBox(width: 8),
             OutlinedButton(
-              onPressed: () {
+              onPressed: () async {
+                await _savePendingRecipe();
+                if (!context.mounted) return;
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -1115,7 +1126,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
+                  await _savePendingRecipe();
+                  if (!context.mounted) return;
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -1137,7 +1150,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
               ),
               const SizedBox(width: 12),
               OutlinedButton(
-                onPressed: () {
+                onPressed: () async {
+                  await _savePendingRecipe();
+                  if (!context.mounted) return;
                   Navigator.push(
                     context,
                     MaterialPageRoute(

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
-import '../services/pending_recipe_store.dart';
+import '../services/pending_recipe_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_wrapper.dart';
 import 'recipe_detail_page.dart';
@@ -16,7 +16,7 @@ class PaymentCancelPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recipe = PendingRecipeStore.instance.load();
+    final recipe = PendingRecipeService.instance.loadLocal();
 
     if (_isMobileCallback) {
       return Scaffold(

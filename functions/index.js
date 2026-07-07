@@ -184,6 +184,46 @@ function extractTierFromMetadata(metadata) {
   return metadata.planId || metadata.tier || metadata.subscriptionTier || null;
 }
 
+async function claimPendingRecipe(userId) {
+  const pendingRef = getFirestore().collection('pending_recipes').doc(userId);
+  const pendingDoc = await pendingRef.get();
+  if (!pendingDoc.exists) return null;
+
+  const data = pendingDoc.data() || {};
+  const clientId = data.clientId || data.id || null;
+
+  if (clientId) {
+    const existingRef = getFirestore().collection('recipes').doc(clientId);
+    const existingDoc = await existingRef.get();
+    if (existingDoc.exists) {
+      await pendingRef.delete();
+      return clientId;
+    }
+  }
+
+  const { savedAt, clientId: _clientId, ...recipeFields } = data;
+  if (!recipeFields.title) {
+    await pendingRef.delete();
+    return null;
+  }
+
+  const recipeDoc = {
+    ...recipeFields,
+    userId,
+    createdAt: recipeFields.createdAt || new Date(),
+  };
+
+  if (clientId) {
+    await getFirestore().collection('recipes').doc(clientId).set(recipeDoc);
+    await pendingRef.delete();
+    return clientId;
+  }
+
+  const docRef = await getFirestore().collection('recipes').add(recipeDoc);
+  await pendingRef.delete();
+  return docRef.id;
+}
+
 async function activateUserSubscription(uid, tier, extraFields = {}) {
   await getFirestore()
     .collection('users')
@@ -199,6 +239,12 @@ async function activateUserSubscription(uid, tier, extraFields = {}) {
       },
       { merge: true },
     );
+
+  try {
+    await claimPendingRecipe(uid);
+  } catch (error) {
+    console.error('Failed to claim pending recipe for user', uid, error);
+  }
 }
 
 function startOfCurrentMonth(date = new Date()) {

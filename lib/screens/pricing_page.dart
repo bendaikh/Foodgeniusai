@@ -5,7 +5,7 @@ import '../models/recipe_model.dart';
 import '../models/subscription_plan_model.dart';
 import '../services/auth_service.dart';
 import '../services/checkout_service.dart';
-import '../services/pending_recipe_store.dart';
+import '../services/pending_recipe_service.dart';
 import '../services/subscription_plan_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/checkout_redirect.dart';
@@ -31,7 +31,7 @@ class _PricingPageState extends State<PricingPage> {
   void initState() {
     super.initState();
     if (widget.returnRecipe != null) {
-      PendingRecipeStore.instance.save(widget.returnRecipe!);
+      PendingRecipeService.instance.save(widget.returnRecipe!);
     }
   }
 
@@ -48,7 +48,9 @@ class _PricingPageState extends State<PricingPage> {
     }
 
     if (widget.returnRecipe != null) {
-      await PendingRecipeStore.instance.save(widget.returnRecipe!);
+      await PendingRecipeService.instance.save(widget.returnRecipe!);
+    } else {
+      await PendingRecipeService.instance.syncLocalToCloud();
     }
 
     setState(() {

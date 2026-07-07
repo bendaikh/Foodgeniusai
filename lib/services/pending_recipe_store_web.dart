@@ -17,6 +17,8 @@ class PendingRecipeStore {
     return decodeRecipe(html.window.sessionStorage[_storageKey]);
   }
 
+  Future<RecipeModel?> loadAsync() async => load();
+
   Future<void> clear() async {
     html.window.sessionStorage.remove(_storageKey);
   }
