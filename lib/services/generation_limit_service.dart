@@ -1,5 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../utils/cloud_function_http.dart';
 
 class GenerationLimitStatus {
   final int limit;
@@ -18,9 +21,9 @@ class GenerationLimitStatus {
 
   factory GenerationLimitStatus.fromMap(Map<String, dynamic> data) {
     return GenerationLimitStatus(
-      limit: (data['limit'] as num?)?.toInt() ?? 0,
-      used: (data['used'] as num?)?.toInt() ?? 0,
-      remaining: (data['remaining'] as num?)?.toInt() ?? 0,
+      limit: cloudFunctionInt(data['limit']),
+      used: cloudFunctionInt(data['used']),
+      remaining: cloudFunctionInt(data['remaining']),
       tier: data['tier'] as String? ?? 'free',
       planId: data['planId'] as String? ?? 'free',
     );
@@ -48,11 +51,8 @@ class GenerationLimitService {
     }
 
     try {
-      final result =
-          await _functions.httpsCallable('getRecipeGenerationStatus').call();
-      return GenerationLimitStatus.fromMap(
-        Map<String, dynamic>.from(result.data as Map),
-      );
+      final data = await _callFunction('getRecipeGenerationStatus');
+      return GenerationLimitStatus.fromMap(data);
     } on FirebaseFunctionsException catch (e) {
       throw Exception(e.message ?? 'Failed to load generation status');
     }
@@ -70,13 +70,19 @@ class GenerationLimitService {
     }
 
     try {
-      final result =
-          await _functions.httpsCallable('consumeRecipeGeneration').call();
-      return GenerationLimitStatus.fromMap(
-        Map<String, dynamic>.from(result.data as Map),
-      );
+      final data = await _callFunction('consumeRecipeGeneration');
+      return GenerationLimitStatus.fromMap(data);
     } on FirebaseFunctionsException catch (e) {
       throw Exception(e.message ?? 'Generation limit reached');
     }
+  }
+
+  Future<Map<String, dynamic>> _callFunction(String name) async {
+    if (kIsWeb) {
+      return CloudFunctionHttp.call(name);
+    }
+
+    final result = await _functions.httpsCallable(name).call();
+    return Map<String, dynamic>.from(result.data as Map);
   }
 }

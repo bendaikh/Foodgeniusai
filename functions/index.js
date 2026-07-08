@@ -280,7 +280,7 @@ async function getRecipeGenerationStatus(uid) {
   const status = userData.subscriptionStatus || 'active';
 
   if (status !== 'active') {
-    return { limit: 0, used: 0, remaining: 0, tier, planId: tier };
+    return { limit: '0', used: '0', remaining: '0', tier, planId: tier };
   }
 
   const limit = await getPlanMonthlyGenerationLimit(tier);
@@ -293,9 +293,9 @@ async function getRecipeGenerationStatus(uid) {
   }
 
   return {
-    limit,
-    used,
-    remaining: Math.max(0, limit - used),
+    limit: String(limit),
+    used: String(used),
+    remaining: String(Math.max(0, limit - used)),
     tier,
     planId: tier,
   };
@@ -352,9 +352,9 @@ async function consumeRecipeGeneration(uid) {
     });
 
     return {
-      limit: planLimit,
-      used: newUsed,
-      remaining: planLimit - newUsed,
+      limit: String(planLimit),
+      used: String(newUsed),
+      remaining: String(planLimit - newUsed),
       tier,
       planId: tier,
     };
