@@ -99,9 +99,64 @@ class RecipeGenerationService {
     }
   }
 
-  /// Sync pending recipes, then fetch the user's saved recipes from the server.
+  /// Sync pending recipes, then fetch the user's saved recipes.
   Future<List<RecipeModel>> loadMyRecipes(String userId) async {
+    final uid = _resolveRecipesUserId(userId);
+    if (uid == null) return [];
+
     await syncPendingToMyRecipes();
-    return _firestoreService.fetchRecipesByUser(userId);
+
+    List<RecipeModel> recipes;
+    try {
+      recipes = await _firestoreService.fetchRecipesByUser(uid);
+    } catch (error, stackTrace) {
+      debugPrint('loadMyRecipes fetch failed: $error\n$stackTrace');
+      recipes = [];
+    }
+
+    return _mergePendingRecipes(uid, recipes);
+  }
+
+  /// Prefer the signed-in user's uid so queries always match Firestore auth rules.
+  String? _resolveRecipesUserId(String userId) {
+    final user = _authService.currentUser;
+    if (user != null && !user.isAnonymous) {
+      return user.uid;
+    }
+    return userId.isNotEmpty ? userId : null;
+  }
+
+  /// Include local/cloud pending recipes that have not reached Firestore yet.
+  List<RecipeModel> mergePendingRecipes(String userId, List<RecipeModel> recipes) {
+    final uid = _resolveRecipesUserId(userId);
+    if (uid == null) return recipes;
+    return _mergePendingRecipes(uid, recipes);
+  }
+
+  List<RecipeModel> _mergePendingRecipes(String uid, List<RecipeModel> recipes) {
+    final knownIds = recipes.map((r) => r.id).whereType<String>().toSet();
+    final merged = List<RecipeModel>.from(recipes);
+
+    final pending = PendingRecipeService.instance.loadLocal();
+    if (pending != null && _pendingBelongsToUser(pending, uid)) {
+      final pendingId = pending.id;
+      if (pendingId == null || pendingId.isEmpty || !knownIds.contains(pendingId)) {
+        merged.insert(0, pending.copyWith(userId: uid));
+      }
+    }
+
+    merged.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime(2000);
+      final bDate = b.createdAt ?? DateTime(2000);
+      return bDate.compareTo(aDate);
+    });
+
+    return merged;
+  }
+
+  bool _pendingBelongsToUser(RecipeModel recipe, String uid) {
+    return recipe.userId == uid ||
+        recipe.userId == 'guest' ||
+        recipe.userId.isEmpty;
   }
 }

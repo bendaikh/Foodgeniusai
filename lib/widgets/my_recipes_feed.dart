@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../models/recipe_model.dart';
+import '../services/firestore_service.dart';
+import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/web_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../screens/recipe_detail_page.dart';
 
-/// Loads recipes from the server after syncing any pending checkout/signup recipe.
+/// Loads recipes from Firestore (live stream) after syncing any pending recipe.
 class MyRecipesFeed extends StatefulWidget {
   final String userId;
   final Widget Function(RecipeModel recipe)? recipeCardBuilder;
@@ -24,7 +26,9 @@ class MyRecipesFeed extends StatefulWidget {
 
 class MyRecipesFeedState extends State<MyRecipesFeed> {
   final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
-  Future<List<RecipeModel>>? _recipesFuture;
+  final FirestoreService _firestoreService = FirestoreService();
+  bool _isSyncing = true;
+  Object? _syncError;
 
   @override
   void initState() {
@@ -34,18 +38,36 @@ class MyRecipesFeedState extends State<MyRecipesFeed> {
 
   Future<void> reload() async {
     setState(() {
-      _recipesFuture = _recipeGenerationService.loadMyRecipes(widget.userId);
+      _isSyncing = true;
+      _syncError = null;
     });
-    await _recipesFuture;
-    if (mounted) setState(() {});
+
+    try {
+      if (_recipeGenerationService.isRegisteredUser) {
+        await PendingRecipeService.instance.claimAndPersist();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _syncError = error);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<RecipeModel>>(
-      future: _recipesFuture,
+    if (_isSyncing) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return StreamBuilder<List<RecipeModel>>(
+      stream: _firestoreService.getRecipesByUser(widget.userId),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -72,7 +94,33 @@ class MyRecipesFeedState extends State<MyRecipesFeed> {
           );
         }
 
-        final recipes = snapshot.data ?? [];
+        final recipes = _recipeGenerationService.mergePendingRecipes(
+          widget.userId,
+          snapshot.data ?? [],
+        );
+
+        if (_syncError != null && recipes.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Could not sync your latest recipe: $_syncError',
+                    style: const TextStyle(color: AppTheme.greyText),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: reload,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
 
         if (recipes.isEmpty) {
           return Center(

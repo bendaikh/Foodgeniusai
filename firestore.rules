@@ -44,10 +44,11 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
-    // User recipes — each user can only read/write their own documents.
+    // User recipes — owners can read/write their own; admins can read any recipe.
     match /recipes/{recipeId} {
       allow read: if request.auth != null
-        && (resource.data.userId == request.auth.uid || isAdmin());
+        && resource.data.userId == request.auth.uid;
+      allow read: if isAdmin();
       allow create: if request.auth != null
         && request.resource.data.userId == request.auth.uid;
       allow update: if request.auth != null

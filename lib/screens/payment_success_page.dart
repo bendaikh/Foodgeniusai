@@ -9,9 +9,9 @@ import '../services/checkout_service.dart';
 import '../services/pending_checkout_store.dart';
 import '../services/pending_recipe_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/recipe_navigation.dart';
 import 'auth_wrapper.dart';
 import 'landing_page.dart';
-import 'recipe_detail_page.dart';
 
 class PaymentSuccessPage extends StatefulWidget {
   const PaymentSuccessPage({super.key});
@@ -150,12 +150,7 @@ class _PaymentSuccessPageState extends State<PaymentSuccessPage> {
     if (!mounted) return;
 
     if (recipe != null) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => RecipeDetailPage(recipe: recipe!),
-        ),
-        (route) => false,
-      );
+      RecipeNavigation.openRecipeDetailFromCheckout(context, recipe);
       return;
     }
 

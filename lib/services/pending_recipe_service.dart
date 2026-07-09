@@ -108,8 +108,12 @@ class PendingRecipeService {
         final existing =
             await _firestore.collection('recipes').doc(clientId).get();
         if (existing.exists) {
-          await clear();
-          return RecipeModel.fromFirestore(existing);
+          final existingUserId =
+              existing.data()?['userId'] as String? ?? '';
+          if (existingUserId == uid) {
+            await clear();
+            return RecipeModel.fromFirestore(existing);
+          }
         }
       } catch (_) {}
     }
@@ -145,11 +149,21 @@ class PendingRecipeService {
         final docRef = _firestore.collection('recipes').doc(clientId);
         final existing = await docRef.get();
         if (existing.exists) {
-          await docRef.update(data);
+          final existingUserId =
+              existing.data()?['userId'] as String? ?? '';
+          if (existingUserId == uid) {
+            await docRef.update(data);
+            savedRecipe = recipeForUser.copyWith(id: clientId);
+          } else {
+            final docId = await _firestoreService.createRecipe(
+              recipeForUser.copyWith(id: null),
+            );
+            savedRecipe = recipeForUser.copyWith(id: docId);
+          }
         } else {
           await docRef.set(data);
+          savedRecipe = recipeForUser.copyWith(id: clientId);
         }
-        savedRecipe = recipeForUser.copyWith(id: clientId);
       } else {
         final docId = await _firestoreService.createRecipe(recipeForUser);
         savedRecipe = recipeForUser.copyWith(id: docId);

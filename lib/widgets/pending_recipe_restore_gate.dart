@@ -3,8 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../services/pending_recipe_service.dart';
-import '../services/recipe_generation_service.dart';import '../screens/landing_page.dart';
-import '../screens/recipe_detail_page.dart';
+import '../services/recipe_generation_service.dart';
+import '../utils/recipe_navigation.dart';
+import '../screens/landing_page.dart';
 
 /// Restores a guest-generated recipe after the user returns from mobile checkout.
 class PendingRecipeRestoreGate extends StatefulWidget {
@@ -64,12 +65,7 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
       if (!mounted || recipe == null) return;
 
       _hasRestored = true;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => RecipeDetailPage(recipe: recipe),
-        ),
-        (route) => false,
-      );
+      RecipeNavigation.openRecipeDetailFromCheckout(context, recipe);
     } catch (_) {
     } finally {
       _isChecking = false;

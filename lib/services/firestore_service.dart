@@ -76,12 +76,12 @@ class FirestoreService {
         });
   }
 
-  // Get recipes by user (one-time server fetch — use after sync/redirect flows)
+  // Get recipes by user (one-time fetch — uses cache + server for reliability)
   Future<List<RecipeModel>> fetchRecipesByUser(String userId) async {
     final snapshot = await _firestore
         .collection('recipes')
         .where('userId', isEqualTo: userId)
-        .get(const GetOptions(source: Source.server));
+        .get();
 
     final recipes = snapshot.docs
         .map((doc) => RecipeModel.fromFirestore(doc))
