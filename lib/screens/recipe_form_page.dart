@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/ai_settings_service.dart';
 import '../services/openai_service.dart';
-import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
-import '../services/generation_limit_service.dart';
+import '../services/recipe_generation_service.dart';
+import '../services/pending_recipe_service.dart';
 import '../models/recipe_model.dart';
 import '../widgets/cooking_animation.dart';
-import 'my_creations_page.dart';
 import 'recipe_detail_page.dart';
 
 class RecipeFormPage extends StatefulWidget {
@@ -19,9 +18,8 @@ class RecipeFormPage extends StatefulWidget {
 
 class _RecipeFormPageState extends State<RecipeFormPage> {
   final AISettingsService _settingsService = AISettingsService();
-  final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
-  final GenerationLimitService _generationLimitService = GenerationLimitService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
   
   final TextEditingController _cravingController = TextEditingController();
   final TextEditingController _servingsController =
@@ -80,9 +78,9 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
       }
 
       final user = _authService.currentUser;
-      if (user != null && !user.isAnonymous) {
-        await _generationLimitService.consumeGeneration();
-      }
+      final isRegistered = user != null && !user.isAnonymous;
+
+      await _recipeGenerationService.ensureCanGenerate();
 
       // Create OpenAI service
       final openaiService = OpenAIService(settings);
@@ -134,10 +132,13 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         // Close the cooking animation dialog
         Navigator.of(context).pop();
 
-        // Save to Firestore only for registered users (not guests)
-        if (user != null && !user.isAnonymous) {
-          try {
-            await _firestoreService.createRecipe(recipeWithUser);
+        try {
+          final savedRecipe =
+              await _recipeGenerationService.persistGeneratedRecipe(recipeWithUser);
+
+          if (!mounted) return;
+
+          if (isRegistered) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Row(
@@ -146,9 +147,9 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        imageUrl != null 
-                          ? 'Recipe and image generated successfully!' 
-                          : 'Recipe generated! (Image generation skipped)',
+                        imageUrl != null
+                            ? 'Recipe saved to My Recipes!'
+                            : 'Recipe saved! (Image generation skipped)',
                       ),
                     ),
                   ],
@@ -157,48 +158,51 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
                 duration: const Duration(seconds: 3),
               ),
             );
-
-            // Navigate to My Creations
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const MyCreationsPage()),
-            );
-          } catch (e) {
+          } else {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Recipe generated but not saved: ${e.toString()}'),
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.visibility_off, color: Colors.white),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Recipe preview generated! Sign in to save it to My Recipes.',
+                      ),
+                    ),
+                  ],
+                ),
                 backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 5),
-              ),
-            );
-            
-            // Still show the recipe even if save failed
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => RecipeDetailPage(recipe: recipeWithUser),
+                duration: Duration(seconds: 3),
               ),
             );
           }
-        } else {
-          // User is not logged in - show recipe with limited access
+
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RecipeDetailPage(recipe: savedRecipe),
+            ),
+          );
+        } catch (e) {
+          if (!mounted) return;
+
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.visibility_off, color: Colors.white),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text('Recipe preview generated! Sign in to see full details.'),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 3),
+            SnackBar(
+              content: Text('Error: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
             ),
           );
 
-          // Navigate to recipe detail (which will show blurred content)
+          if (!isRegistered) {
+            await PendingRecipeService.instance.save(recipeWithUser);
+          } else {
+            await _recipeGenerationService.ensureInMyRecipes(recipeWithUser);
+          }
+
+          if (!mounted) return;
+
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(

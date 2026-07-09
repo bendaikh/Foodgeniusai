@@ -1,13 +1,24 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../models/recipe_model.dart';
 import '../services/pending_recipe_service.dart';
+import '../services/recipe_generation_service.dart';
 import '../theme/app_theme.dart';
 import 'auth_wrapper.dart';
 import 'recipe_detail_page.dart';
 
-class PaymentCancelPage extends StatelessWidget {
+class PaymentCancelPage extends StatefulWidget {
   const PaymentCancelPage({super.key});
+
+  @override
+  State<PaymentCancelPage> createState() => _PaymentCancelPageState();
+}
+
+class _PaymentCancelPageState extends State<PaymentCancelPage> {
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
+  RecipeModel? _recipe;
+  bool _isLoading = true;
 
   bool get _isMobileCallback {
     if (!kIsWeb) return false;
@@ -15,8 +26,30 @@ class PaymentCancelPage extends StatelessWidget {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _restoreRecipe();
+  }
+
+  Future<void> _restoreRecipe() async {
+    final saved = await _recipeGenerationService.syncPendingToMyRecipes();
+    final local = saved ?? PendingRecipeService.instance.loadLocal();
+    if (!mounted) return;
+    setState(() {
+      _recipe = local;
+      _isLoading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final recipe = PendingRecipeService.instance.loadLocal();
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final recipe = _recipe;
 
     if (_isMobileCallback) {
       return Scaffold(
@@ -115,7 +148,7 @@ class PaymentCancelPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'No charges were made. You can return to your recipe and try again whenever you are ready.',
+                    'No charges were made. Your recipe is saved in My Recipes. Subscribe to unlock the full content.',
                     style: TextStyle(color: AppTheme.greyText),
                     textAlign: TextAlign.center,
                   ),

@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../theme/app_theme.dart';
 import '../services/ai_settings_service.dart';
 import '../services/openai_service.dart';
-import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
-import '../services/generation_limit_service.dart';
+import '../services/pending_recipe_service.dart';
+import '../services/recipe_generation_service.dart';
 import '../models/recipe_model.dart';
 import '../widgets/cooking_animation.dart';
 import '../widgets/web_image.dart';
@@ -22,9 +22,8 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
   final TextEditingController _ingredientController = TextEditingController();
   final List<String> _ingredients = [];
   final AISettingsService _settingsService = AISettingsService();
-  final FirestoreService _firestoreService = FirestoreService();
   final AuthService _authService = AuthService();
-  final GenerationLimitService _generationLimitService = GenerationLimitService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
   
   bool _isGenerating = false;
   List<RecipeModel> _generatedRecipes = [];
@@ -75,9 +74,9 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
       }
 
       final user = _authService.currentUser;
-      if (user != null && !user.isAnonymous) {
-        await _generationLimitService.consumeGeneration();
-      }
+      final isRegistered = user != null && !user.isAnonymous;
+
+      await _recipeGenerationService.ensureCanGenerate();
 
       final openaiService = OpenAIService(settings);
 
@@ -122,11 +121,15 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
           createdAt: recipe.createdAt,
         );
 
-        // Only save to Firestore for registered users (not anonymous guests)
-        if (user != null && !user.isAnonymous) {
-          await _firestoreService.createRecipe(recipeWithUser);
+        // Save for registered users (credits consumed for paid plans after save)
+        RecipeModel savedRecipe = recipeWithUser;
+        if (isRegistered) {
+          savedRecipe =
+              await _recipeGenerationService.persistGeneratedRecipe(recipeWithUser);
+        } else {
+          await PendingRecipeService.instance.save(recipeWithUser);
         }
-        recipesWithImages.add(recipeWithUser);
+        recipesWithImages.add(savedRecipe);
       }
 
       if (mounted) {

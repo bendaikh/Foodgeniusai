@@ -1,5 +1,5 @@
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:ui';
 import '../theme/app_theme.dart';
 import '../widgets/web_image.dart';
@@ -7,6 +7,7 @@ import '../models/recipe_model.dart';
 import '../utils/url_launcher_helper.dart' as url_helper;
 import '../services/auth_service.dart';
 import '../services/pending_recipe_service.dart';
+import '../services/recipe_generation_service.dart';
 import 'pricing_page.dart';
 import 'user_auth_page.dart';
 
@@ -28,6 +29,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   late Map<int, bool> _checkedIngredients;
   late Map<int, bool> _checkedInstructions;
   final AuthService _authService = AuthService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
 
   @override
   void initState() {
@@ -38,9 +40,13 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     _checkedInstructions = {
       for (var i = 0; i < widget.recipe.instructions.length; i++) i: false
     };
-    if (widget.recipe.userId == 'guest') {
-      PendingRecipeService.instance.save(widget.recipe);
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _recipeGenerationService.ensureInMyRecipes(widget.recipe);
+      } catch (error, stackTrace) {
+        debugPrint('Recipe auto-save failed: $error\n$stackTrace');
+      }
+    });
   }
 
   bool _isAuthenticated = false;

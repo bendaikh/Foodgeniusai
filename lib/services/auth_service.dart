@@ -25,6 +25,14 @@ class AuthService {
     return status == 'active' && tier != 'free';
   }
 
+  Future<Map<String, dynamic>?> fetchUserProfile() async {
+    final user = currentUser;
+    if (user == null || user.isAnonymous) return null;
+
+    final doc = await _firestore.collection('users').doc(user.uid).get();
+    return doc.exists ? doc.data() : null;
+  }
+
   /// Live stream of the signed-in user's Firestore profile (null for guests).
   Stream<Map<String, dynamic>?> get userProfileStream {
     return authStateChanges.asyncExpand((user) {

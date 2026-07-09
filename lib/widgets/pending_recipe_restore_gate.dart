@@ -1,11 +1,9 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../services/auth_service.dart';
 import '../services/pending_recipe_service.dart';
-import '../screens/landing_page.dart';
+import '../services/recipe_generation_service.dart';import '../screens/landing_page.dart';
 import '../screens/recipe_detail_page.dart';
 
 /// Restores a guest-generated recipe after the user returns from mobile checkout.
@@ -21,24 +19,20 @@ class PendingRecipeRestoreGate extends StatefulWidget {
 
 class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
     with WidgetsBindingObserver {
-  final AuthService _authService = AuthService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
   bool _isChecking = false;
   bool _hasRestored = false;
 
   @override
   void initState() {
     super.initState();
-    if (!kIsWeb) {
-      WidgetsBinding.instance.addObserver(this);
-      _tryRestorePendingRecipe();
-    }
+    WidgetsBinding.instance.addObserver(this);
+    _tryRestorePendingRecipe();
   }
 
   @override
   void dispose() {
-    if (!kIsWeb) {
-      WidgetsBinding.instance.removeObserver(this);
-    }
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -50,28 +44,22 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
   }
 
   Future<void> _tryRestorePendingRecipe() async {
-    if (kIsWeb || _isChecking || _hasRestored || !mounted) return;
+    if (_isChecking || !mounted) return;
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) return;
 
     final hasLocalPending = PendingRecipeService.instance.loadLocal() != null;
-    if (!hasLocalPending) return;
+    final hasCloudPending = await _hasCloudPending(user.uid);
+    if (!hasLocalPending && !hasCloudPending) {
+      await _recipeGenerationService.syncPendingToMyRecipes();
+      return;
+    }
 
     _isChecking = true;
 
     try {
-      final profileDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final profile = profileDoc.data();
-
-      if (!_authService.hasPaidSubscription(profile)) return;
-
-      final recipe = await PendingRecipeService.instance.claimAndPersist(
-        userId: user.uid,
-      );
+      final recipe = await _recipeGenerationService.syncPendingToMyRecipes();
 
       if (!mounted || recipe == null) return;
 
@@ -85,6 +73,18 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
     } catch (_) {
     } finally {
       _isChecking = false;
+    }
+  }
+
+  Future<bool> _hasCloudPending(String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('pending_recipes')
+          .doc(uid)
+          .get();
+      return doc.exists;
+    } catch (_) {
+      return false;
     }
   }
 

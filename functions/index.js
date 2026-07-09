@@ -225,15 +225,18 @@ async function claimPendingRecipe(userId) {
 }
 
 async function activateUserSubscription(uid, tier, extraFields = {}) {
-  await getFirestore()
-    .collection('users')
-    .doc(uid)
-    .set(
+  const userRef = getFirestore().collection('users').doc(uid);
+  const userDoc = await userRef.get();
+  const existingUsed = userDoc.exists
+    ? userDoc.data().monthlyGenerationsUsed || 0
+    : 0;
+
+  await userRef.set(
       {
         subscriptionTier: tier,
         subscriptionStatus: 'active',
         subscriptionUpdatedAt: new Date(),
-        monthlyGenerationsUsed: 0,
+        monthlyGenerationsUsed: existingUsed,
         generationPeriodStart: new Date(),
         ...extraFields,
       },

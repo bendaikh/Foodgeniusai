@@ -10,17 +10,23 @@ class PendingRecipeStore {
   PendingRecipeStore._();
 
   Future<void> save(RecipeModel recipe) async {
-    html.window.sessionStorage[_storageKey] = jsonEncode(recipe.toJson());
+    final encoded = jsonEncode(recipe.toJson());
+    html.window.sessionStorage[_storageKey] = encoded;
+    // localStorage survives checkout redirects and browser back navigation.
+    html.window.localStorage[_storageKey] = encoded;
   }
 
   RecipeModel? load() {
-    return decodeRecipe(html.window.sessionStorage[_storageKey]);
+    final raw = html.window.sessionStorage[_storageKey] ??
+        html.window.localStorage[_storageKey];
+    return decodeRecipe(raw);
   }
 
   Future<RecipeModel?> loadAsync() async => load();
 
   Future<void> clear() async {
     html.window.sessionStorage.remove(_storageKey);
+    html.window.localStorage.remove(_storageKey);
   }
 }
 

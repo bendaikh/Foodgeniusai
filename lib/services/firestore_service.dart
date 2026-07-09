@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../models/recipe_model.dart';
+import '../utils/firestore_recipe_data.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -75,10 +76,40 @@ class FirestoreService {
         });
   }
 
+  // Get recipes by user (one-time server fetch — use after sync/redirect flows)
+  Future<List<RecipeModel>> fetchRecipesByUser(String userId) async {
+    final snapshot = await _firestore
+        .collection('recipes')
+        .where('userId', isEqualTo: userId)
+        .get(const GetOptions(source: Source.server));
+
+    final recipes = snapshot.docs
+        .map((doc) => RecipeModel.fromFirestore(doc))
+        .toList();
+    recipes.sort((a, b) {
+      final aDate = a.createdAt ?? DateTime(2000);
+      final bDate = b.createdAt ?? DateTime(2000);
+      return bDate.compareTo(aDate);
+    });
+    return recipes;
+  }
+
   // Create recipe
   Future<String> createRecipe(RecipeModel recipe) async {
-    DocumentReference docRef =
-        await _firestore.collection('recipes').add(recipe.toMap());
+    final data = sanitizeRecipeForFirestore(recipe.toMap());
+
+    if (recipe.id != null && recipe.id!.isNotEmpty) {
+      final docRef = _firestore.collection('recipes').doc(recipe.id);
+      final existing = await docRef.get();
+      if (existing.exists) {
+        await docRef.update(data);
+      } else {
+        await docRef.set(data);
+      }
+      return recipe.id!;
+    }
+
+    final docRef = await _firestore.collection('recipes').add(data);
     return docRef.id;
   }
 

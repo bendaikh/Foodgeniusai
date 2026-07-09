@@ -18,6 +18,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Publicly-readable branding metadata (favicon URL, app name, etc.).
     match /admin_settings/app_settings {
       allow read: if true;
@@ -38,12 +44,17 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
-    // User recipes.
+    // User recipes — each user can only read/write their own documents.
     match /recipes/{recipeId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null
-        && request.auth.uid == resource.data.userId;
+      allow read: if request.auth != null
+        && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null
+        && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     // User profiles.

@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../models/user_model.dart';
 import '../models/recipe_model.dart';
+import '../widgets/my_recipes_feed.dart';
 import '../widgets/web_image.dart';
 import 'recipe_detail_page.dart';
 import 'recipe_form_page.dart';
@@ -21,7 +22,17 @@ class UserAccountPage extends StatefulWidget {
 class _UserAccountPageState extends State<UserAccountPage> {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
+  final GlobalKey<MyRecipesFeedState> _myRecipesKey = GlobalKey<MyRecipesFeedState>();
   int _selectedTab = 0; // 0 = Profile, 1 = My Recipes
+
+  void _selectTab(int index) {
+    setState(() {
+      _selectedTab = index;
+    });
+    if (index == 1) {
+      _myRecipesKey.currentState?.reload();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,11 +106,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
         body: _buildMainContent(currentUser),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _selectedTab,
-          onTap: (index) {
-            setState(() {
-              _selectedTab = index;
-            });
-          },
+          onTap: _selectTab,
           backgroundColor: AppTheme.cardBackground,
           selectedItemColor: AppTheme.primaryGreen,
           unselectedItemColor: AppTheme.greyText,
@@ -209,9 +216,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
       child: InkWell(
         onTap: () async {
           if (index >= 0) {
-            setState(() {
-              _selectedTab = index;
-            });
+            _selectTab(index);
           } else if (index == -1) {
             // Create Recipe
             Navigator.push(
@@ -608,43 +613,13 @@ class _UserAccountPageState extends State<UserAccountPage> {
               ],
             ),
           SizedBox(height: isMobile ? 24 : 32),
-          StreamBuilder<List<RecipeModel>>(
-            stream: _firestoreService.getRecipesByUser(user.uid),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(
-                  child: Text('Error: ${snapshot.error}'),
-                );
-              }
-
-              final recipes = snapshot.data ?? [];
-
-              if (recipes.isEmpty) {
-                return _buildEmptyState();
-              }
-
-              final screenWidth = MediaQuery.of(context).size.width;
-              final crossAxisCount = screenWidth < 600 ? 1 : (screenWidth < 900 ? 2 : 3);
-              
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: screenWidth < 600 ? 16 : 24,
-                  mainAxisSpacing: screenWidth < 600 ? 16 : 24,
-                  childAspectRatio: 0.75,
-                ),
-                itemCount: recipes.length,
-                itemBuilder: (context, index) {
-                  return _buildRecipeCard(recipes[index]);
-                },
-              );
-            },
+          MyRecipesFeed(
+            key: _myRecipesKey,
+            userId: user.uid,
+            recipeCardBuilder: (recipe) => Padding(
+              padding: EdgeInsets.only(bottom: isMobile ? 16 : 0),
+              child: _buildRecipeCard(recipe),
+            ),
           ),
         ],
       ),

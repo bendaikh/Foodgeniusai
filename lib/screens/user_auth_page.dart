@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
-import '../services/pending_recipe_service.dart';
+import '../services/recipe_generation_service.dart';
 
 class UserAuthPage extends StatefulWidget {
   final bool isLogin;
@@ -14,6 +14,7 @@ class UserAuthPage extends StatefulWidget {
 
 class _UserAuthPageState extends State<UserAuthPage> {
   final AuthService _authService = AuthService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
@@ -73,7 +74,7 @@ class _UserAuthPageState extends State<UserAuthPage> {
       }
 
       if (mounted) {
-        await PendingRecipeService.instance.syncLocalToCloud();
+        await _recipeGenerationService.syncPendingToMyRecipes();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

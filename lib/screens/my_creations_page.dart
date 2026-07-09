@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../theme/app_theme.dart';
 import 'recipe_detail_page.dart';
-import '../services/firestore_service.dart';
 import '../models/recipe_model.dart';
+import '../widgets/my_recipes_feed.dart';
 import '../widgets/web_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -49,35 +49,12 @@ class MyCreationsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 40),
                 if (currentUser != null)
-                  StreamBuilder<List<RecipeModel>>(
-                    stream: FirestoreService().getRecipesByUser(currentUser.uid),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      
-                      if (snapshot.hasError) {
-                        return _buildErrorState(snapshot.error.toString());
-                      }
-                      
-                      final recipes = snapshot.data ?? [];
-                      
-                      if (recipes.isEmpty) {
-                        return _buildEmptyState(context);
-                      }
-                      
-                      return Column(
-                        children: recipes.map((recipe) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 24),
-                            child: _buildRecipeCard(
-                              context,
-                              recipe: recipe,
-                            ),
-                          );
-                        }).toList(),
-                      );
-                    },
+                  MyRecipesFeed(
+                    userId: currentUser.uid,
+                    recipeCardBuilder: (recipe) => Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: _buildRecipeCard(context, recipe: recipe),
+                    ),
                   )
                 else
                   _buildNotLoggedInState(),

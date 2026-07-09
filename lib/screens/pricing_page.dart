@@ -5,7 +5,7 @@ import '../models/recipe_model.dart';
 import '../models/subscription_plan_model.dart';
 import '../services/auth_service.dart';
 import '../services/checkout_service.dart';
-import '../services/pending_recipe_service.dart';
+import '../services/recipe_generation_service.dart';
 import '../services/subscription_plan_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/checkout_redirect.dart';
@@ -24,33 +24,41 @@ class _PricingPageState extends State<PricingPage> {
   final AuthService _authService = AuthService();
   final CheckoutService _checkoutService = CheckoutService();
   final SubscriptionPlanService _planService = SubscriptionPlanService();
+  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
   String? _loadingPlanId;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRecipeOnOpen());
+  }
+
+  Future<void> _syncRecipeOnOpen() async {
     if (widget.returnRecipe != null) {
-      PendingRecipeService.instance.save(widget.returnRecipe!);
+      await _recipeGenerationService.ensureInMyRecipes(widget.returnRecipe!);
+      return;
     }
+    await _recipeGenerationService.syncPendingToMyRecipes();
   }
 
   Future<void> _startPaidCheckout(SubscriptionPlanModel plan) async {
     if (!_authService.isAuthenticatedUser) {
       if (!mounted) return;
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => const UserAuthPage(isLogin: false),
         ),
       );
-      return;
+      if (!_authService.isAuthenticatedUser) return;
+      await _syncRecipeOnOpen();
     }
 
     if (widget.returnRecipe != null) {
-      await PendingRecipeService.instance.save(widget.returnRecipe!);
+      await _recipeGenerationService.ensureInMyRecipes(widget.returnRecipe!);
     } else {
-      await PendingRecipeService.instance.syncLocalToCloud();
+      await _recipeGenerationService.syncPendingToMyRecipes();
     }
 
     setState(() {

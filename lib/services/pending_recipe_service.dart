@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/recipe_model.dart';
+import '../utils/firestore_recipe_data.dart';
 import 'firestore_service.dart';
+import 'generation_usage_service.dart';
 import 'pending_recipe_store.dart';
 
 /// Persists guest recipes across signup, payment redirect, and mobile browser checkout.
@@ -136,20 +138,36 @@ class PendingRecipeService {
     );
 
     try {
+      RecipeModel? savedRecipe;
+      final data = sanitizeRecipeForFirestore(recipeForUser.toMap());
+
       if (clientId != null && clientId.isNotEmpty) {
-        await _firestore
-            .collection('recipes')
-            .doc(clientId)
-            .set(recipeForUser.toMap());
-        await clear();
-        return recipeForUser.copyWith(id: clientId);
+        final docRef = _firestore.collection('recipes').doc(clientId);
+        final existing = await docRef.get();
+        if (existing.exists) {
+          await docRef.update(data);
+        } else {
+          await docRef.set(data);
+        }
+        savedRecipe = recipeForUser.copyWith(id: clientId);
+      } else {
+        final docId = await _firestoreService.createRecipe(recipeForUser);
+        savedRecipe = recipeForUser.copyWith(id: docId);
       }
 
-      final docId = await _firestoreService.createRecipe(recipeForUser);
+      if (savedRecipe.id != null && savedRecipe.id!.isNotEmpty) {
+        await GenerationUsageService.recordIfNeeded(
+          userId: uid,
+          recipeId: savedRecipe.id!,
+        );
+      }
+
       await clear();
-      return recipeForUser.copyWith(id: docId);
-    } catch (_) {
-      return null;
+      return savedRecipe;
+    } catch (error, stackTrace) {
+      // ignore: avoid_print
+      print('claimAndPersist failed: $error\n$stackTrace');
+      rethrow;
     }
   }
 
@@ -174,10 +192,10 @@ class PendingRecipeService {
 }
 
 extension RecipeModelCopyWith on RecipeModel {
-  RecipeModel copyWith({String? id}) {
+  RecipeModel copyWith({String? id, String? userId}) {
     return RecipeModel(
       id: id ?? this.id,
-      userId: userId,
+      userId: userId ?? this.userId,
       title: title,
       description: description,
       ingredients: ingredients,
