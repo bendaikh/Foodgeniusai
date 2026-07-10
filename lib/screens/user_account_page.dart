@@ -13,7 +13,9 @@ import 'recipe_form_page.dart';
 import 'landing_page.dart';
 
 class UserAccountPage extends StatefulWidget {
-  const UserAccountPage({super.key});
+  final int initialTab;
+
+  const UserAccountPage({super.key, this.initialTab = 0});
 
   @override
   State<UserAccountPage> createState() => _UserAccountPageState();
@@ -23,7 +25,13 @@ class _UserAccountPageState extends State<UserAccountPage> {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
   final GlobalKey<MyRecipesFeedState> _myRecipesKey = GlobalKey<MyRecipesFeedState>();
-  int _selectedTab = 0; // 0 = Profile, 1 = My Recipes
+  late int _selectedTab; // 0 = Profile, 1 = My Recipes
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = widget.initialTab;
+  }
 
   void _selectTab(int index) {
     setState(() {
@@ -685,116 +693,114 @@ class _UserAccountPageState extends State<UserAccountPage> {
                         )
                   : _buildPlaceholderImage(150),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      recipe.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recipe.title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: AppTheme.greyText,
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.access_time,
-                          size: 14,
-                          color: AppTheme.greyText,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${recipe.totalTime} min',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.greyText,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primaryGreen.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            recipe.difficulty,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppTheme.primaryGreen,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (recipe.description != null && recipe.description!.isNotEmpty) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(width: 4),
                       Text(
-                        recipe.description!,
+                        '${recipe.totalTime} min',
                         style: const TextStyle(
-                          fontSize: 13,
+                          fontSize: 12,
                           color: AppTheme.greyText,
-                          height: 1.4,
                         ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryGreen.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          recipe.difficulty,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.primaryGreen,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
-                    const Spacer(),
-                    const Divider(
-                      color: AppTheme.greyText,
-                      height: 20,
+                  ),
+                  if (recipe.description.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      recipe.description,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.greyText,
+                        height: 1.4,
+                      ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    Row(
-                      children: [
+                  ],
+                  const SizedBox(height: 12),
+                  const Divider(
+                    color: AppTheme.greyText,
+                    height: 20,
+                  ),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.restaurant,
+                        size: 14,
+                        color: AppTheme.primaryGreen.withOpacity(0.7),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${recipe.ingredients.length} ingredients',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.greyText,
+                        ),
+                      ),
+                      if (recipe.cuisine.isNotEmpty) ...[
+                        const SizedBox(width: 12),
                         Icon(
-                          Icons.restaurant,
+                          Icons.public,
                           size: 14,
                           color: AppTheme.primaryGreen.withOpacity(0.7),
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          '${recipe.ingredients.length} ingredients',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.greyText,
+                        Expanded(
+                          child: Text(
+                            recipe.cuisine,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.greyText,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (recipe.cuisine != null && recipe.cuisine!.isNotEmpty) ...[
-                          const SizedBox(width: 12),
-                          Icon(
-                            Icons.public,
-                            size: 14,
-                            color: AppTheme.primaryGreen.withOpacity(0.7),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              recipe.cuisine!,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.greyText,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
                       ],
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],

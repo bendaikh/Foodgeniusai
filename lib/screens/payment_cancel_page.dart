@@ -5,8 +5,8 @@ import '../models/recipe_model.dart';
 import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/recipe_navigation.dart';
 import 'auth_wrapper.dart';
-import 'recipe_detail_page.dart';
 
 class PaymentCancelPage extends StatefulWidget {
   const PaymentCancelPage({super.key});
@@ -156,12 +156,9 @@ class _PaymentCancelPageState extends State<PaymentCancelPage> {
                   if (recipe != null)
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                RecipeDetailPage(recipe: recipe),
-                          ),
-                          (route) => false,
+                        RecipeNavigation.openRecipeDetailFromCheckout(
+                          context,
+                          recipe,
                         );
                       },
                       child: const Text('Back to my recipe'),

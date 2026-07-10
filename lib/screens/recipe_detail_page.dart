@@ -8,6 +8,7 @@ import '../utils/url_launcher_helper.dart' as url_helper;
 import '../services/auth_service.dart';
 import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
+import '../utils/recipe_navigation.dart';
 import 'pricing_page.dart';
 import 'user_auth_page.dart';
 
@@ -163,21 +164,29 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
         _hasFullAccess =
             _isAuthenticated && _authService.hasPaidSubscription(profileSnapshot.data);
 
-        return Scaffold(
-          body: SafeArea(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(context),
-                  _buildNutrition(),
-                  if (widget.missingIngredients != null &&
-                      widget.missingIngredients!.isNotEmpty)
-                    _buildMissingIngredients(),
-                  _buildIngredients(),
-                  _buildInstructions(),
-                  const SizedBox(height: 40),
-                ],
+        return PopScope(
+          canPop: Navigator.of(context).canPop(),
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) {
+              RecipeNavigation.goBackFromRecipeDetail(context);
+            }
+          },
+          child: Scaffold(
+            body: SafeArea(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(context),
+                    _buildNutrition(),
+                    if (widget.missingIngredients != null &&
+                        widget.missingIngredients!.isNotEmpty)
+                      _buildMissingIngredients(),
+                    _buildIngredients(),
+                    _buildInstructions(),
+                    const SizedBox(height: 40),
+                  ],
+                ),
               ),
             ),
           ),
@@ -251,7 +260,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => RecipeNavigation.goBackFromRecipeDetail(context),
               icon: const Icon(Icons.arrow_back, color: Colors.white),
             ),
           ),
