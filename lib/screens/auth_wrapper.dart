@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin/screens/admin_dashboard_export.dart';
+import '../widgets/payment_return_gate.dart';
 import '../widgets/pending_recipe_restore_gate.dart';
 
 class AuthWrapper extends StatefulWidget {
@@ -17,43 +18,45 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: _auth.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          // Show nothing — the HTML splash is still covering the screen
-          return const SizedBox.shrink();
-        }
+    return PaymentReturnGate(
+      child: StreamBuilder<User?>(
+        stream: _auth.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            // Show nothing — the HTML splash is still covering the screen
+            return const SizedBox.shrink();
+          }
 
-        final user = snapshot.data;
+          final user = snapshot.data;
 
-        if (user == null) {
-          return const RestorableLandingPage();
-        }
-
-        return FutureBuilder<DocumentSnapshot>(
-          future: _firestore.collection('users').doc(user.uid).get(),
-          builder: (context, userSnapshot) {
-            if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox.shrink();
-            }
-
-            if (userSnapshot.hasError ||
-                userSnapshot.data == null ||
-                !userSnapshot.data!.exists) {
-              return const RestorableLandingPage();
-            }
-
-            final data =
-                userSnapshot.data!.data() as Map<String, dynamic>?;
-
-            if (data?['role'] == 'admin') {
-              return const AdminDashboard();
-            }
+          if (user == null) {
             return const RestorableLandingPage();
-          },
-        );
-      },
+          }
+
+          return FutureBuilder<DocumentSnapshot>(
+            future: _firestore.collection('users').doc(user.uid).get(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox.shrink();
+              }
+
+              if (userSnapshot.hasError ||
+                  userSnapshot.data == null ||
+                  !userSnapshot.data!.exists) {
+                return const RestorableLandingPage();
+              }
+
+              final data =
+                  userSnapshot.data!.data() as Map<String, dynamic>?;
+
+              if (data?['role'] == 'admin') {
+                return const AdminDashboard();
+              }
+              return const RestorableLandingPage();
+            },
+          );
+        },
+      ),
     );
   }
 }

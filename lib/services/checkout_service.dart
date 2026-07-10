@@ -2,6 +2,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../config/payment_config.dart';
 import '../utils/cloud_function_http.dart';
 import 'pending_checkout_store.dart';
 
@@ -15,12 +16,12 @@ class CheckoutService {
       throw Exception('Please sign in before choosing a paid plan.');
     }
 
-    final origin =
-        kIsWeb ? Uri.base.origin : 'https://gourmetai-c432b.web.app';
-
-    final mobileSource = kIsWeb ? '' : '?source=mobile';
-    final successUrl = '$origin/payment-success$mobileSource';
-    final cancelUrl = '$origin/payment-cancel$mobileSource';
+    final successUrl = kIsWeb
+        ? '${Uri.base.origin}/payment-success'
+        : PaymentConfig.mobileSuccessUrl;
+    final cancelUrl = kIsWeb
+        ? '${Uri.base.origin}/payment-cancel'
+        : PaymentConfig.mobileCancelUrl;
 
     try {
       final data = await _callFunction(
