@@ -6,7 +6,9 @@ import '../services/auth_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../services/pending_recipe_service.dart';
 import '../models/recipe_model.dart';
+import '../utils/app_message_dialog.dart';
 import '../widgets/cooking_animation.dart';
+import 'pricing_page.dart';
 import 'recipe_detail_page.dart';
 
 class RecipeFormPage extends StatefulWidget {
@@ -187,13 +189,7 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         } catch (e) {
           if (!mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error: ${e.toString()}'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 5),
-            ),
-          );
+          await _showGenerationError(e);
 
           if (!isRegistered) {
             await PendingRecipeService.instance.save(recipeWithUser);
@@ -215,14 +211,8 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
       if (mounted) {
         // Close the cooking animation dialog
         Navigator.of(context).pop();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+
+        await _showGenerationError(e);
       }
     } finally {
       if (mounted) {
@@ -231,6 +221,26 @@ class _RecipeFormPageState extends State<RecipeFormPage> {
         });
       }
     }
+  }
+
+  Future<void> _showGenerationError(Object error) async {
+    final message = AppMessageDialog.cleanErrorMessage(error);
+
+    if (AppMessageDialog.isGenerationLimitError(error)) {
+      await AppMessageDialog.showGenerationLimit(
+        context: context,
+        message: message,
+        onViewPlans: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const PricingPage()),
+          );
+        },
+      );
+      return;
+    }
+
+    await AppMessageDialog.showError(context: context, message: message);
   }
 
   @override

@@ -7,8 +7,10 @@ import '../services/auth_service.dart';
 import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../models/recipe_model.dart';
+import '../utils/app_message_dialog.dart';
 import '../widgets/cooking_animation.dart';
 import '../widgets/web_image.dart';
+import 'pricing_page.dart';
 import 'recipe_detail_page.dart';
 
 class KitchenTreasuresPage extends StatefulWidget {
@@ -166,14 +168,8 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+
+        await _showGenerationError(e);
       }
     } finally {
       if (mounted) {
@@ -182,6 +178,26 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage> {
         });
       }
     }
+  }
+
+  Future<void> _showGenerationError(Object error) async {
+    final message = AppMessageDialog.cleanErrorMessage(error);
+
+    if (AppMessageDialog.isGenerationLimitError(error)) {
+      await AppMessageDialog.showGenerationLimit(
+        context: context,
+        message: message,
+        onViewPlans: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const PricingPage()),
+          );
+        },
+      );
+      return;
+    }
+
+    await AppMessageDialog.showError(context: context, message: message);
   }
 
   @override

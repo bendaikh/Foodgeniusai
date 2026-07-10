@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../exceptions/generation_limit_exception.dart';
 import '../models/recipe_model.dart';
 import 'auth_service.dart';
 import 'firestore_service.dart';
@@ -29,7 +30,7 @@ class RecipeGenerationService {
 
     final status = await _generationLimitService.getStatus();
     if (status.remaining <= 0) {
-      throw Exception(
+      throw GenerationLimitException(
         'You\'ve used all ${status.limit} AI recipe generations for this month. Your limit resets at the start of next month.',
       );
     }
