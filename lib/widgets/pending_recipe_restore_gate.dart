@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../utils/recipe_navigation.dart';
-import '../screens/landing_page.dart';
+import '../screens/main_shell_page.dart';
 
 /// Restores a guest-generated recipe after the user returns from mobile checkout.
 class PendingRecipeRestoreGate extends StatefulWidget {
@@ -90,14 +90,14 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
   }
 }
 
-/// Landing page wrapped with pending-recipe restore for mobile app resume.
+/// Main shell wrapped with pending-recipe restore for mobile app resume.
 class RestorableLandingPage extends StatelessWidget {
   const RestorableLandingPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return const PendingRecipeRestoreGate(
-      child: LandingPage(),
+      child: MainShellPage(),
     );
   }
 }

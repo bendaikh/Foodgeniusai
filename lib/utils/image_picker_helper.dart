@@ -6,17 +6,45 @@ import 'package:image_picker/image_picker.dart';
 class ImagePickerHelper {
   static final ImagePicker _picker = ImagePicker();
 
-  /// Pick an image from gallery
-  static Future<File?> pickImageFromGallery() async {
+  /// Pick an image from gallery (XFile works on mobile + web).
+  static Future<XFile?> pickXFileFromGallery() async {
     try {
-      final XFile? image = await _picker.pickImage(
+      return await _picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 1920,
         maxHeight: 1080,
         imageQuality: 85,
       );
-      
-      if (image != null) {
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error picking image from gallery: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Pick an image from camera (XFile works on mobile + web).
+  static Future<XFile?> pickXFileFromCamera() async {
+    try {
+      return await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error picking image from camera: $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Pick an image from gallery
+  static Future<File?> pickImageFromGallery() async {
+    try {
+      final XFile? image = await pickXFileFromGallery();
+      if (image != null && !kIsWeb) {
         return File(image.path);
       }
       return null;
@@ -31,14 +59,8 @@ class ImagePickerHelper {
   /// Pick an image from camera
   static Future<File?> pickImageFromCamera() async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
-      
-      if (image != null) {
+      final XFile? image = await pickXFileFromCamera();
+      if (image != null && !kIsWeb) {
         return File(image.path);
       }
       return null;

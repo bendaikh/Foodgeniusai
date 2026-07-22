@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>344064372155-9enf3jh0qiqavnt5dn4aebih7ug6t7m3.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.344064372155-9enf3jh0qiqavnt5dn4aebih7ug6t7m3</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>344064372155-7vk8kqcig0u870mnld9mkenp78c3as5m.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCvz7xL7VRfbTrvWaabQuKpWLjIq-m04nE</string>
+	<key>GCM_SENDER_ID</key>
+	<string>344064372155</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.foodgenius.ai</string>
+	<key>PROJECT_ID</key>
+	<string>gourmetai-c432b</string>
+	<key>STORAGE_BUCKET</key>
+	<string>gourmetai-c432b.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:344064372155:ios:2752f2b789c330fe35a89e</string>
+</dict>
+</plist>

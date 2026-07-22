@@ -1,43 +1,34 @@
 import 'package:flutter/foundation.dart';
 
-import '../exceptions/generation_limit_exception.dart';
 import '../models/recipe_model.dart';
 import 'auth_service.dart';
 import 'firestore_service.dart';
-import 'generation_limit_service.dart';
 import 'generation_usage_service.dart';
 import 'pending_recipe_service.dart';
+import 'recipe_access_service.dart';
 
-/// Shared post-generation flow: save recipes and consume paid-plan credits.
+/// Shared post-generation flow: save recipes and consume access credits.
 class RecipeGenerationService {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
-  final GenerationLimitService _generationLimitService = GenerationLimitService();
+  final RecipeAccessService _access = RecipeAccessService.instance;
 
   bool get isRegisteredUser {
     final user = _authService.currentUser;
     return user != null && !user.isAnonymous;
   }
 
-  Future<bool> hasPaidSubscription() async {
-    final profile = await _authService.fetchUserProfile();
-    return _authService.hasPaidSubscription(profile);
-  }
+  Future<bool> hasPaidSubscription() => _access.hasPaidSubscription();
 
-  /// Throws when a paid subscriber has no generations left this month.
-  Future<void> ensureCanGenerate() async {
-    if (!await hasPaidSubscription()) return;
-
-    final status = await _generationLimitService.getStatus();
-    if (status.remaining <= 0) {
-      throw GenerationLimitException(
-        'You\'ve used all ${status.limit} AI recipe generations for this month. Your limit resets at the start of next month.',
-      );
-    }
+  /// Throws when generation is not allowed (paid monthly limit or free quota).
+  Future<void> ensureCanGenerate({String source = 'unknown'}) {
+    return _access.assertCanGenerate(source: source);
   }
 
   /// Ensures a recipe appears in My Recipes for signed-in users.
   /// Guests are stored as pending until they create an account.
+  ///
+  /// Does **not** consume free/paid generation quota.
   Future<RecipeModel> ensureInMyRecipes(RecipeModel recipe) async {
     final user = _authService.currentUser;
     if (user == null || user.isAnonymous) {
@@ -45,7 +36,9 @@ class RecipeGenerationService {
       return recipe;
     }
 
-    if (recipe.userId != user.uid && recipe.userId != 'guest' && recipe.userId.isNotEmpty) {
+    if (recipe.userId != user.uid &&
+        recipe.userId != 'guest' &&
+        recipe.userId.isNotEmpty) {
       throw Exception('This recipe belongs to another account.');
     }
 
@@ -67,25 +60,25 @@ class RecipeGenerationService {
     return savedRecipe;
   }
 
-  /// Saves a recipe for signed-in users, or stores it as pending for guests.
-  /// Records one generation credit and enforces paid-plan limits when subscribed.
-  Future<RecipeModel> persistGeneratedRecipe(RecipeModel recipe) async {
-    final saved = await ensureInMyRecipes(recipe);
-
-    final user = _authService.currentUser;
-    if (user == null || user.isAnonymous) {
+  /// Saves a recipe, then records a successful generation (free or paid).
+  Future<RecipeModel> persistGeneratedRecipe(
+    RecipeModel recipe, {
+    String source = 'unknown',
+  }) async {
+    try {
+      final saved = await ensureInMyRecipes(recipe);
+      await _access.recordSuccessfulGeneration(
+        source: source,
+        generationSucceeded: true,
+      );
       return saved;
+    } catch (e) {
+      await _access.recordSuccessfulGeneration(
+        source: source,
+        generationSucceeded: false,
+      );
+      rethrow;
     }
-
-    if (await hasPaidSubscription()) {
-      try {
-        await _generationLimitService.consumeGeneration();
-      } catch (error, stackTrace) {
-        debugPrint('Paid generation limit sync failed: $error\n$stackTrace');
-      }
-    }
-
-    return saved;
   }
 
   /// Moves any pending/local/cloud recipe into My Recipes for the signed-in user.
@@ -128,20 +121,28 @@ class RecipeGenerationService {
   }
 
   /// Include local/cloud pending recipes that have not reached Firestore yet.
-  List<RecipeModel> mergePendingRecipes(String userId, List<RecipeModel> recipes) {
+  List<RecipeModel> mergePendingRecipes(
+    String userId,
+    List<RecipeModel> recipes,
+  ) {
     final uid = _resolveRecipesUserId(userId);
     if (uid == null) return recipes;
     return _mergePendingRecipes(uid, recipes);
   }
 
-  List<RecipeModel> _mergePendingRecipes(String uid, List<RecipeModel> recipes) {
+  List<RecipeModel> _mergePendingRecipes(
+    String uid,
+    List<RecipeModel> recipes,
+  ) {
     final knownIds = recipes.map((r) => r.id).whereType<String>().toSet();
     final merged = List<RecipeModel>.from(recipes);
 
     final pending = PendingRecipeService.instance.loadLocal();
     if (pending != null && _pendingBelongsToUser(pending, uid)) {
       final pendingId = pending.id;
-      if (pendingId == null || pendingId.isEmpty || !knownIds.contains(pendingId)) {
+      if (pendingId == null ||
+          pendingId.isEmpty ||
+          !knownIds.contains(pendingId)) {
         merged.insert(0, pending.copyWith(userId: uid));
       }
     }

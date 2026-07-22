@@ -13,11 +13,15 @@ import '../screens/recipe_detail_page.dart';
 class MyRecipesFeed extends StatefulWidget {
   final String userId;
   final Widget Function(RecipeModel recipe)? recipeCardBuilder;
+  /// When true, this feed lives inside a parent scroll view and must not
+  /// compete for vertical drag gestures.
+  final bool nestedInScrollView;
 
   const MyRecipesFeed({
     super.key,
     required this.userId,
     this.recipeCardBuilder,
+    this.nestedInScrollView = false,
   });
 
   @override
@@ -162,9 +166,15 @@ class MyRecipesFeedState extends State<MyRecipesFeed> {
 
         return RefreshIndicator(
           onRefresh: reload,
+          notificationPredicate: widget.nestedInScrollView
+              ? (_) => true
+              : defaultScrollNotificationPredicate,
           child: ListView.separated(
             shrinkWrap: true,
-            physics: const AlwaysScrollableScrollPhysics(),
+            primary: false,
+            physics: widget.nestedInScrollView
+                ? const NeverScrollableScrollPhysics()
+                : const AlwaysScrollableScrollPhysics(),
             itemCount: recipes.length,
             separatorBuilder: (_, __) => const SizedBox(height: 16),
             itemBuilder: (context, index) {

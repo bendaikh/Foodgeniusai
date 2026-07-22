@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   static const Color primaryGreen = Color(0xFF2DD4BF);
-  static const Color darkBackground = Color(0xFF0A1628);
-  static const Color cardBackground = Color(0xFF0F1F33);
+  static const Color secondaryAccent = Color(0xFF14B8A6);
+  static const Color success = Color(0xFF10B981);
+  static const Color darkBackground = Color(0xFF081421);
+  static const Color cardBackground = Color(0xFF112235);
   static const Color lightText = Color(0xFFFFFFFF);
   static const Color greyText = Color(0xFF94A3B8);
 
@@ -77,9 +79,8 @@ class AppTheme {
       ),
       colorScheme: const ColorScheme.dark(
         primary: primaryGreen,
-        secondary: primaryGreen,
+        secondary: secondaryAccent,
         surface: cardBackground,
-        background: darkBackground,
       ),
     );
   }

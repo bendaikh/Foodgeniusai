@@ -207,6 +207,110 @@ class OpenAIService {
     }
   }
 
+  /// Detect visible food ingredients from a fridge/pantry photo.
+  /// Additive helper only — does not alter recipe generation prompts or flows.
+  Future<List<String>> detectIngredientsFromImage({
+    required Uint8List imageBytes,
+    String mimeType = 'image/jpeg',
+  }) async {
+    if (settings.openaiApiKey == null || settings.openaiApiKey!.isEmpty) {
+      throw Exception(
+        'OpenAI API key not configured. Please ask admin to configure it in Admin Settings.',
+      );
+    }
+
+    final base64Image = base64Encode(imageBytes);
+    // Use a dedicated vision-capable model for fridge scanning only.
+    // This does not affect recipe text generation or image generation models.
+    const scanVisionModel = 'gpt-4o-mini';
+    final normalizedMimeType =
+        mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
+    final imageDataUrl = 'data:$normalizedMimeType;base64,$base64Image';
+
+    final requestBody = <String, dynamic>{
+      'model': scanVisionModel,
+      'messages': [
+        {
+          'role': 'system',
+          'content':
+              'You are a food ingredient recognition assistant. Identify edible ingredients visible in photos of fridges, pantries, or kitchens. Respond with valid JSON only.',
+        },
+        {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'text',
+              'text':
+                  'Identify all clearly visible edible ingredients in this image. Return JSON only in this exact shape: {"ingredients":["Eggs","Milk"]}. Use short common ingredient names. Do not invent items you cannot see. If none are visible, return {"ingredients":[]}.',
+            },
+            {
+              'type': 'image_url',
+              'image_url': {
+                'url': imageDataUrl,
+              },
+            },
+          ],
+        },
+      ],
+      'max_tokens': 800,
+      'temperature': 0.2,
+      'response_format': {'type': 'json_object'},
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${settings.openaiApiKey}',
+        },
+        body: jsonEncode(requestBody),
+      );
+
+      if (response.statusCode != 200) {
+        final errorData = jsonDecode(response.body);
+        throw Exception(
+          'OpenAI API error: ${errorData['error']['message']}',
+        );
+      }
+
+      final data = jsonDecode(response.body);
+      final content = data['choices'][0]['message']['content'] as String;
+      return _parseDetectedIngredients(content);
+    } catch (e) {
+      throw Exception('Failed to detect ingredients: $e');
+    }
+  }
+
+  List<String> _parseDetectedIngredients(String content) {
+    try {
+      String cleaned = content.trim();
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned
+            .replaceFirst(RegExp(r'^```(?:json)?\s*'), '')
+            .replaceFirst(RegExp(r'\s*```$'), '');
+      }
+
+      final decoded = jsonDecode(cleaned);
+      final raw = decoded is Map ? decoded['ingredients'] : decoded;
+      if (raw is! List) return [];
+
+      final seen = <String>{};
+      final ingredients = <String>[];
+      for (final item in raw) {
+        final name = item.toString().trim();
+        if (name.isEmpty) continue;
+        final key = name.toLowerCase();
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        ingredients.add(name);
+      }
+      return ingredients;
+    } catch (e) {
+      throw Exception('Failed to parse detected ingredients: $e');
+    }
+  }
+
   Future<String> generateRecipeImage(String recipeTitle, String description, {String? userId}) async {
     if (settings.openaiApiKey == null || settings.openaiApiKey!.isEmpty) {
       throw Exception('OpenAI API key not configured');

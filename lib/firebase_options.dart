@@ -46,20 +46,20 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCCmVcmaR9C-FRJz_B2MlfcgNG-WemFQQU',
-    appId: '1:344064372155:android:0939560f6082ec3035a89e',
+    appId: '1:344064372155:android:6b1925804b3dc59035a89e',
     messagingSenderId: '344064372155',
     projectId: 'gourmetai-c432b',
     storageBucket: 'gourmetai-c432b.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyClG1zFNb6sflC0yKO-Mmbawqq6ReqazpI',
-    appId: '1:34406437215:ios:XXXXX',
-    messagingSenderId: '34406437215',
+    apiKey: 'AIzaSyCvz7xL7VRfbTrvWaabQuKpWLjIq-m04nE',
+    appId: '1:344064372155:ios:2752f2b789c330fe35a89e',
+    messagingSenderId: '344064372155',
     projectId: 'gourmetai-c432b',
     authDomain: 'gourmetai-c432b.firebaseapp.com',
     storageBucket: 'gourmetai-c432b.firebasestorage.app',
-    iosBundleId: 'com.example.gourmetai',
+    iosBundleId: 'com.foodgenius.ai',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(

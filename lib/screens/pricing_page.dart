@@ -1,11 +1,15 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:purchases_flutter/purchases_flutter.dart' show CustomerInfo;
 
 import '../models/recipe_model.dart';
 import '../models/subscription_plan_model.dart';
 import '../services/auth_service.dart';
 import '../services/checkout_service.dart';
 import '../services/recipe_generation_service.dart';
+import '../services/revenue_cat_service.dart';
 import '../services/subscription_plan_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/checkout_redirect.dart';
@@ -24,9 +28,17 @@ class _PricingPageState extends State<PricingPage> {
   final AuthService _authService = AuthService();
   final CheckoutService _checkoutService = CheckoutService();
   final SubscriptionPlanService _planService = SubscriptionPlanService();
-  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
+  final RecipeGenerationService _recipeGenerationService =
+      RecipeGenerationService();
+  final RevenueCatService _revenueCat = RevenueCatService.instance;
+
   String? _loadingPlanId;
   String? _errorMessage;
+  bool _isRestoring = false;
+
+  /// App Store purchases via RevenueCat — iOS only. Web keeps Dodo; Android unchanged.
+  bool get _useRevenueCatOnIos =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
   @override
   void initState() {
@@ -42,23 +54,73 @@ class _PricingPageState extends State<PricingPage> {
     await _recipeGenerationService.syncPendingToMyRecipes();
   }
 
-  Future<void> _startPaidCheckout(SubscriptionPlanModel plan) async {
-    if (!_authService.isAuthenticatedUser) {
-      if (!mounted) return;
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const UserAuthPage(isLogin: false),
-        ),
-      );
-      if (!_authService.isAuthenticatedUser) return;
-      await _syncRecipeOnOpen();
-    }
+  Future<bool> _ensureSignedIn() async {
+    if (_authService.isAuthenticatedUser) return true;
+    if (!mounted) return false;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UserAuthPage(isLogin: false),
+      ),
+    );
+    return _authService.isAuthenticatedUser;
+  }
 
+  Future<void> _preparePendingRecipe() async {
     if (widget.returnRecipe != null) {
       await _recipeGenerationService.ensureInMyRecipes(widget.returnRecipe!);
     } else {
       await _recipeGenerationService.syncPendingToMyRecipes();
+    }
+  }
+
+  /// Maps a Firestore plan card to RevenueCat package ids: basic / pro / premium.
+  String? _revenueCatPackageIdForPlan(
+    SubscriptionPlanModel plan,
+    List<SubscriptionPlanModel> allPlans,
+  ) {
+    final normalized = plan.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized.contains('basic')) return RevenueCatPackageIds.basic;
+    if (normalized.contains('premium') || normalized.contains('elite')) {
+      return RevenueCatPackageIds.premium;
+    }
+    if (normalized.contains('pro')) return RevenueCatPackageIds.pro;
+
+    final sorted = [...allPlans]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final index = sorted.indexWhere((p) => p.id == plan.id);
+    if (index == 0) return RevenueCatPackageIds.basic;
+    if (index == 1) return RevenueCatPackageIds.pro;
+    if (index == 2) return RevenueCatPackageIds.premium;
+    return null;
+  }
+
+  Future<RevenueCatPurchaseOutcome> _purchaseRevenueCatPackage(
+    String packageId,
+  ) {
+    switch (packageId) {
+      case RevenueCatPackageIds.basic:
+        return _revenueCat.purchaseBasic();
+      case RevenueCatPackageIds.pro:
+        return _revenueCat.purchasePro();
+      case RevenueCatPackageIds.premium:
+        return _revenueCat.purchasePremium();
+      default:
+        return Future.value(
+          RevenueCatPurchaseOutcome.failed('Unknown package: $packageId'),
+        );
+    }
+  }
+
+  Future<void> _startPaidCheckout(
+    SubscriptionPlanModel plan, {
+    required List<SubscriptionPlanModel> allPlans,
+  }) async {
+    if (!await _ensureSignedIn()) return;
+    await _preparePendingRecipe();
+
+    if (_useRevenueCatOnIos) {
+      await _startRevenueCatPurchase(plan, allPlans: allPlans);
+      return;
     }
 
     setState(() {
@@ -87,6 +149,131 @@ class _PricingPageState extends State<PricingPage> {
         _loadingPlanId = null;
       });
     }
+  }
+
+  Future<void> _startRevenueCatPurchase(
+    SubscriptionPlanModel plan, {
+    required List<SubscriptionPlanModel> allPlans,
+  }) async {
+    final packageId = _revenueCatPackageIdForPlan(plan, allPlans);
+    if (packageId == null) {
+      setState(() {
+        _errorMessage = 'This plan is not available for App Store purchase yet.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingPlanId = plan.id;
+      _errorMessage = null;
+    });
+
+    final outcome = await _purchaseRevenueCatPackage(packageId);
+
+    if (!mounted) return;
+
+    if (outcome.wasCancelled) {
+      setState(() => _loadingPlanId = null);
+      return;
+    }
+
+    if (outcome.isFailure) {
+      if (kDebugMode && outcome.debugDetail != null) {
+        debugPrint('PricingPage RC purchase error: ${outcome.debugDetail}');
+      }
+      setState(() {
+        _loadingPlanId = null;
+        _errorMessage = 'Purchase could not be completed. Please try again.';
+      });
+      return;
+    }
+
+    await _finishRevenueCatUnlock(
+      preferredTier: packageId,
+      customerInfo: outcome.customerInfo,
+    );
+  }
+
+  Future<void> _restorePurchases() async {
+    if (!_useRevenueCatOnIos || _isRestoring || _loadingPlanId != null) return;
+
+    if (!await _ensureSignedIn()) return;
+    await _preparePendingRecipe();
+
+    setState(() {
+      _isRestoring = true;
+      _errorMessage = null;
+    });
+
+    final info = await _revenueCat.restorePurchases();
+    if (!mounted) return;
+
+    if (info == null) {
+      if (kDebugMode) {
+        debugPrint('PricingPage RC restore failed or SDK not configured');
+      }
+      setState(() {
+        _isRestoring = false;
+        _errorMessage = 'Could not restore purchases. Please try again.';
+      });
+      return;
+    }
+
+    await _finishRevenueCatUnlock(
+      preferredTier: RevenueCatPackageIds.premium,
+      customerInfo: info,
+      restoring: true,
+    );
+  }
+
+  Future<void> _finishRevenueCatUnlock({
+    required String preferredTier,
+    CustomerInfo? customerInfo,
+    bool restoring = false,
+  }) async {
+    // Refresh CustomerInfo, then require entitlement `premium` before closing.
+    final refreshed = await _revenueCat.getCustomerInfo() ?? customerInfo;
+    final entitled = await _revenueCat.hasPremiumEntitlement(refreshed);
+
+    if (!mounted) return;
+
+    if (!entitled) {
+      setState(() {
+        _loadingPlanId = null;
+        _isRestoring = false;
+        _errorMessage = restoring
+            ? 'No active subscription found to restore.'
+            : 'Purchase finished, but your subscription is not active yet. Try Restore Purchases.';
+      });
+      return;
+    }
+
+    final synced = await _revenueCat.syncPaidSubscriptionToProfile(
+      tier: preferredTier,
+    );
+    if (!mounted) return;
+
+    if (!synced) {
+      if (kDebugMode) {
+        debugPrint('PricingPage: entitlement active but Firestore sync failed');
+      }
+      setState(() {
+        _loadingPlanId = null;
+        _isRestoring = false;
+        _errorMessage =
+            'Subscription verified, but we could not update your account. Please try again.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingPlanId = null;
+      _isRestoring = false;
+      _errorMessage = null;
+    });
+
+    if (!mounted) return;
+    Navigator.pop(context, true);
   }
 
   @override
@@ -126,6 +313,10 @@ class _PricingPageState extends State<PricingPage> {
                       _buildEmptyState()
                     else
                       _buildPlansGrid(plans, isMobile),
+                    if (_useRevenueCatOnIos) ...[
+                      const SizedBox(height: 24),
+                      _buildRestorePurchasesButton(),
+                    ],
                     const SizedBox(height: 24),
                     Text(
                       _authService.isAuthenticatedUser
@@ -150,7 +341,7 @@ class _PricingPageState extends State<PricingPage> {
       return Column(
         children: [
           for (var i = 0; i < plans.length; i++) ...[
-            _buildPricingCard(plans[i]),
+            _buildPricingCard(plans[i], allPlans: plans),
             if (i < plans.length - 1) const SizedBox(height: 20),
           ],
         ],
@@ -161,10 +352,30 @@ class _PricingPageState extends State<PricingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var i = 0; i < plans.length; i++) ...[
-          Expanded(child: _buildPricingCard(plans[i])),
+          Expanded(child: _buildPricingCard(plans[i], allPlans: plans)),
           if (i < plans.length - 1) const SizedBox(width: 24),
         ],
       ],
+    );
+  }
+
+  Widget _buildRestorePurchasesButton() {
+    return TextButton(
+      onPressed:
+          _isRestoring || _loadingPlanId != null ? null : _restorePurchases,
+      child: _isRestoring
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Text(
+              'Restore Purchases',
+              style: TextStyle(
+                color: AppTheme.primaryGreen,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
     );
   }
 
@@ -294,8 +505,12 @@ class _PricingPageState extends State<PricingPage> {
     );
   }
 
-  Widget _buildPricingCard(SubscriptionPlanModel plan) {
+  Widget _buildPricingCard(
+    SubscriptionPlanModel plan, {
+    required List<SubscriptionPlanModel> allPlans,
+  }) {
     final isLoading = _loadingPlanId == plan.id;
+    final busyLabel = _useRevenueCatOnIos ? 'Purchasing…' : 'Redirecting…';
 
     return Container(
       decoration: BoxDecoration(
@@ -443,9 +658,12 @@ class _PricingPageState extends State<PricingPage> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: isLoading || _loadingPlanId != null
+                    onPressed: isLoading ||
+                            _loadingPlanId != null ||
+                            _isRestoring
                         ? null
-                        : () => _startPaidCheckout(plan),
+                        : () =>
+                            _startPaidCheckout(plan, allPlans: allPlans),
                     icon: isLoading
                         ? const SizedBox(
                             width: 18,
@@ -456,7 +674,7 @@ class _PricingPageState extends State<PricingPage> {
                             ),
                           )
                         : const Icon(Icons.payment),
-                    label: Text(isLoading ? 'Redirecting…' : plan.buttonText),
+                    label: Text(isLoading ? busyLabel : plan.buttonText),
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
                           plan.isPopular ? AppTheme.primaryGreen : Colors.transparent,

@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://foodgeniusai.com/sitemap.xml

@@ -1,21 +1,33 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/audio_settings_service.dart';
 import '../services/firestore_service.dart';
+import '../services/recipe_access_service.dart';
 import '../models/user_model.dart';
 import '../models/recipe_model.dart';
 import '../widgets/my_recipes_feed.dart';
+import '../widgets/premium_audio_button.dart';
 import '../widgets/web_image.dart';
 import 'recipe_detail_page.dart';
 import 'recipe_form_page.dart';
-import 'landing_page.dart';
+import 'main_shell_page.dart';
+import 'user_auth_page.dart';
+import '../services/measurement_service.dart';
 
 class UserAccountPage extends StatefulWidget {
   final int initialTab;
+  final bool embedInShell;
+  final double bottomContentInset;
 
-  const UserAccountPage({super.key, this.initialTab = 0});
+  const UserAccountPage({
+    super.key,
+    this.initialTab = 0,
+    this.embedInShell = false,
+    this.bottomContentInset = 0,
+  });
 
   @override
   State<UserAccountPage> createState() => _UserAccountPageState();
@@ -24,7 +36,8 @@ class UserAccountPage extends StatefulWidget {
 class _UserAccountPageState extends State<UserAccountPage> {
   final AuthService _authService = AuthService();
   final FirestoreService _firestoreService = FirestoreService();
-  final GlobalKey<MyRecipesFeedState> _myRecipesKey = GlobalKey<MyRecipesFeedState>();
+  final GlobalKey<MyRecipesFeedState> _myRecipesKey =
+      GlobalKey<MyRecipesFeedState>();
   late int _selectedTab; // 0 = Profile, 1 = My Recipes
 
   @override
@@ -44,14 +57,89 @@ class _UserAccountPageState extends State<UserAccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = FirebaseAuth.instance.currentUser;
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
 
-    if (currentUser == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Please log in to view your account'),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnapshot) {
+        final currentUser = authSnapshot.data;
+
+        // Logged-out / guest: show the existing auth screen (email + Google/Apple).
+        if (currentUser == null || currentUser.isAnonymous) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: widget.bottomContentInset),
+            child: const UserAuthPage(),
+          );
+        }
+
+        return _buildAuthenticatedAccount(context, currentUser, isMobile);
+      },
+    );
+  }
+
+  Widget _buildAuthenticatedAccount(
+    BuildContext context,
+    User currentUser,
+    bool isMobile,
+  ) {
+    if (widget.embedInShell) {
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: AppTheme.cardBackground,
+          automaticallyImplyLeading: false,
+          title: Text(
+            _selectedTab == 0 ? 'Profile' : 'My Recipes',
+            style: const TextStyle(color: Colors.white),
+          ),
+          actions: [
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(child: PremiumAudioButton(size: 36, iconSize: 18)),
+            ),
+            PopupMenuButton<int>(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onSelected: (value) async {
+                if (value == -1) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RecipeFormPage(),
+                    ),
+                  );
+                } else if (value == -2) {
+                  await _authService.signOut();
+                }
+              },
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: -1,
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_circle, color: AppTheme.primaryGreen),
+                          SizedBox(width: 12),
+                          Text('Create Recipe'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: -2,
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout, color: Colors.red),
+                          SizedBox(width: 12),
+                          Text('Logout'),
+                        ],
+                      ),
+                    ),
+                  ],
+            ),
+          ],
+        ),
+        body: _buildMainContent(
+          currentUser,
+          bottomInset: widget.bottomContentInset,
         ),
       );
     }
@@ -66,6 +154,10 @@ class _UserAccountPageState extends State<UserAccountPage> {
             style: const TextStyle(color: Colors.white),
           ),
           actions: [
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(child: PremiumAudioButton(size: 36, iconSize: 18)),
+            ),
             PopupMenuButton<int>(
               icon: const Icon(Icons.more_vert, color: Colors.white),
               onSelected: (value) async {
@@ -73,41 +165,46 @@ class _UserAccountPageState extends State<UserAccountPage> {
                   // Create Recipe
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const RecipeFormPage()),
+                    MaterialPageRoute(
+                      builder: (context) => const RecipeFormPage(),
+                    ),
                   );
                 } else if (value == -2) {
                   // Logout
                   await _authService.signOut();
                   if (mounted) {
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const LandingPage()),
+                      MaterialPageRoute(
+                        builder: (context) => const MainShellPage(),
+                      ),
                       (route) => false,
                     );
                   }
                 }
               },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: -1,
-                  child: Row(
-                    children: [
-                      Icon(Icons.add_circle, color: AppTheme.primaryGreen),
-                      SizedBox(width: 12),
-                      Text('Create Recipe'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: -2,
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout, color: Colors.red),
-                      SizedBox(width: 12),
-                      Text('Logout'),
-                    ],
-                  ),
-                ),
-              ],
+              itemBuilder:
+                  (context) => [
+                    const PopupMenuItem(
+                      value: -1,
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_circle, color: AppTheme.primaryGreen),
+                          SizedBox(width: 12),
+                          Text('Create Recipe'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: -2,
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout, color: Colors.red),
+                          SizedBox(width: 12),
+                          Text('Logout'),
+                        ],
+                      ),
+                    ),
+                  ],
             ),
           ],
         ),
@@ -119,10 +216,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
           selectedItemColor: AppTheme.primaryGreen,
           unselectedItemColor: AppTheme.greyText,
           items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person),
-              label: 'Profile',
-            ),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
             BottomNavigationBarItem(
               icon: Icon(Icons.restaurant_menu),
               label: 'My Recipes',
@@ -162,9 +256,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
               ),
             ),
             // Main content
-            Expanded(
-              child: _buildMainContent(currentUser),
-            ),
+            Expanded(child: _buildMainContent(currentUser)),
           ],
         ),
       ),
@@ -176,9 +268,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-            color: AppTheme.primaryGreen.withOpacity(0.2),
-          ),
+          bottom: BorderSide(color: AppTheme.primaryGreen.withOpacity(0.2)),
         ),
       ),
       child: Column(
@@ -189,11 +279,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
               color: AppTheme.primaryGreen.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              Icons.person,
-              color: AppTheme.primaryGreen,
-              size: 40,
-            ),
+            child: Icon(Icons.person, color: AppTheme.primaryGreen, size: 40),
           ),
           const SizedBox(height: 12),
           Text(
@@ -206,10 +292,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
           ),
           Text(
             user.email ?? '',
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppTheme.greyText,
-            ),
+            style: const TextStyle(fontSize: 12, color: AppTheme.greyText),
           ),
         ],
       ),
@@ -236,7 +319,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
             await _authService.signOut();
             if (mounted) {
               Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const LandingPage()),
+                MaterialPageRoute(builder: (context) => const MainShellPage()),
                 (route) => false,
               );
             }
@@ -246,9 +329,10 @@ class _UserAccountPageState extends State<UserAccountPage> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected
-                ? AppTheme.primaryGreen.withOpacity(0.1)
-                : Colors.transparent,
+            color:
+                isSelected
+                    ? AppTheme.primaryGreen.withOpacity(0.1)
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -264,7 +348,8 @@ class _UserAccountPageState extends State<UserAccountPage> {
                   title,
                   style: TextStyle(
                     color: isSelected ? AppTheme.primaryGreen : Colors.white,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
               ),
@@ -275,38 +360,51 @@ class _UserAccountPageState extends State<UserAccountPage> {
     );
   }
 
-  Widget _buildMainContent(User user) {
+  Widget _buildMainContent(User user, {double bottomInset = 0}) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
-    
+
     if (_selectedTab == 0) {
-      return _buildProfileTab(user);
+      return _buildProfileTab(user, bottomInset: bottomInset);
     } else {
-      return _buildRecipesTab(user, isMobile);
+      return _buildRecipesTab(user, isMobile, bottomInset: bottomInset);
     }
   }
 
-  Widget _buildProfileTab(User user) {
+  Widget _buildProfileTab(User user, {double bottomInset = 0}) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 768;
-    
+
     return StreamBuilder<UserModel?>(
       stream: Stream.fromFuture(_firestoreService.getUserById(user.uid)),
       builder: (context, snapshot) {
         final userData = snapshot.data;
 
         return SingleChildScrollView(
-          padding: EdgeInsets.all(isMobile ? 16 : 32),
+          padding: EdgeInsets.fromLTRB(
+            isMobile ? 16 : 32,
+            isMobile ? 16 : 32,
+            isMobile ? 16 : 32,
+            (isMobile ? 16 : 32) + bottomInset,
+          ),
+          physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'My Profile',
-                style: TextStyle(
-                  fontSize: isMobile ? 24 : 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
+              Row(
+                children: [
+                  Text(
+                    'My Profile',
+                    style: TextStyle(
+                      fontSize: isMobile ? 24 : 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (!isMobile)
+                    const PremiumAudioButton(size: 40, iconSize: 20),
+                ],
               ),
               SizedBox(height: isMobile ? 4 : 8),
               Text(
@@ -319,11 +417,218 @@ class _UserAccountPageState extends State<UserAccountPage> {
               SizedBox(height: isMobile ? 24 : 40),
               _buildProfileCard(user, userData, isMobile),
               SizedBox(height: isMobile ? 16 : 24),
+              _buildMeasurementPreferenceCard(isMobile),
+              SizedBox(height: isMobile ? 16 : 24),
               _buildStatsCard(user, isMobile),
+              if (kDebugMode) ...[
+                SizedBox(height: isMobile ? 16 : 24),
+                _buildDebugFreeRecipeResetCard(isMobile),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildDebugFreeRecipeResetCard(bool isMobile) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Developer only',
+            style: TextStyle(
+              fontSize: isMobile ? 12 : 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.amber.shade200,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Reset Free Recipe Test',
+            style: TextStyle(
+              fontSize: isMobile ? 16 : 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Clears local free-recipe flags and debug usage counters for this user. Does not change subscription plan data.',
+            style: TextStyle(
+              fontSize: isMobile ? 13 : 14,
+              color: AppTheme.greyText,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () async {
+                await RecipeAccessService.instance.resetFreeRecipeTest();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Free recipe test state reset (debug only).'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.amber.shade200,
+                side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: const Text('Reset Free Recipe Test'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () async {
+                await AudioSettingsService.instance
+                    .resetFirstLaunchVoicePromptForDebug();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'First-launch voice prompt reset (debug only).',
+                    ),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.amber.shade200,
+                side: BorderSide(color: Colors.amber.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: const Text('Reset Voice Prompt Test'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeasurementPreferenceCard(bool isMobile) {
+    return ListenableBuilder(
+      listenable: MeasurementService.instance,
+      builder: (context, _) {
+        final selected = MeasurementService.instance.preference;
+        return Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(isMobile ? 16 : 24),
+          decoration: BoxDecoration(
+            color: AppTheme.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Measurement Units',
+                style: TextStyle(
+                  fontSize: isMobile ? 16 : 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(height: isMobile ? 6 : 8),
+              Text(
+                'Choose how ingredient quantities and cooking temperatures are displayed.',
+                style: TextStyle(
+                  fontSize: isMobile ? 12 : 14,
+                  color: AppTheme.greyText,
+                  height: 1.35,
+                ),
+              ),
+              SizedBox(height: isMobile ? 14 : 18),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildMeasurementChip(
+                    label: 'Automatic',
+                    selected: selected == MeasurementPreference.automatic,
+                    onTap:
+                        () => MeasurementService.instance.setPreference(
+                          MeasurementPreference.automatic,
+                        ),
+                  ),
+                  _buildMeasurementChip(
+                    label: 'Metric',
+                    selected: selected == MeasurementPreference.metric,
+                    onTap:
+                        () => MeasurementService.instance.setPreference(
+                          MeasurementPreference.metric,
+                        ),
+                  ),
+                  _buildMeasurementChip(
+                    label: 'US',
+                    selected: selected == MeasurementPreference.us,
+                    onTap:
+                        () => MeasurementService.instance.setPreference(
+                          MeasurementPreference.us,
+                        ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMeasurementChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color:
+                selected
+                    ? AppTheme.primaryGreen.withOpacity(0.18)
+                    : AppTheme.darkBackground.withOpacity(0.55),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color:
+                  selected
+                      ? AppTheme.primaryGreen
+                      : AppTheme.primaryGreen.withOpacity(0.22),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? AppTheme.primaryGreen : Colors.white,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -333,9 +638,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
       decoration: BoxDecoration(
         color: AppTheme.cardBackground,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppTheme.primaryGreen.withOpacity(0.2),
-        ),
+        border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,13 +656,18 @@ class _UserAccountPageState extends State<UserAccountPage> {
           Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
           _buildInfoRow('Name', userData?.name ?? 'N/A', isMobile),
           Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
-          _buildInfoRow('Subscription', userData?.subscriptionTier ?? 'free', isMobile),
+          _buildInfoRow(
+            'Subscription',
+            userData?.subscriptionTier ?? 'free',
+            isMobile,
+          ),
           Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
-          _buildInfoRow('Member Since', 
-            userData?.createdAt != null 
-              ? '${userData!.createdAt!.day}/${userData.createdAt!.month}/${userData.createdAt!.year}'
-              : 'N/A',
-            isMobile
+          _buildInfoRow(
+            'Member Since',
+            userData?.createdAt != null
+                ? '${userData!.createdAt!.day}/${userData.createdAt!.month}/${userData.createdAt!.year}'
+                : 'N/A',
+            isMobile,
           ),
         ],
       ),
@@ -374,10 +682,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: AppTheme.greyText,
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: AppTheme.greyText, fontSize: 12),
           ),
           const SizedBox(height: 4),
           Text(
@@ -391,7 +696,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
         ],
       );
     }
-    
+
     // Side-by-side layout on desktop
     return Row(
       children: [
@@ -399,10 +704,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
           width: 150,
           child: Text(
             label,
-            style: const TextStyle(
-              color: AppTheme.greyText,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: AppTheme.greyText, fontSize: 14),
           ),
         ),
         Expanded(
@@ -430,9 +732,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
           decoration: BoxDecoration(
             color: AppTheme.cardBackground,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppTheme.primaryGreen.withOpacity(0.2),
-            ),
+            border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -459,11 +759,14 @@ class _UserAccountPageState extends State<UserAccountPage> {
                     const SizedBox(height: 12),
                     _buildStatItem(
                       'This Month',
-                      recipes.where((r) {
-                        final now = DateTime.now();
-                        return r.createdAt?.month == now.month &&
-                               r.createdAt?.year == now.year;
-                      }).length.toString(),
+                      recipes
+                          .where((r) {
+                            final now = DateTime.now();
+                            return r.createdAt?.month == now.month &&
+                                r.createdAt?.year == now.year;
+                          })
+                          .length
+                          .toString(),
                       Icons.calendar_today,
                       isMobile,
                     ),
@@ -485,11 +788,14 @@ class _UserAccountPageState extends State<UserAccountPage> {
                     Expanded(
                       child: _buildStatItem(
                         'This Month',
-                        recipes.where((r) {
-                          final now = DateTime.now();
-                          return r.createdAt?.month == now.month &&
-                                 r.createdAt?.year == now.year;
-                        }).length.toString(),
+                        recipes
+                            .where((r) {
+                              final now = DateTime.now();
+                              return r.createdAt?.month == now.month &&
+                                  r.createdAt?.year == now.year;
+                            })
+                            .length
+                            .toString(),
                         Icons.calendar_today,
                         isMobile,
                       ),
@@ -503,7 +809,12 @@ class _UserAccountPageState extends State<UserAccountPage> {
     );
   }
 
-  Widget _buildStatItem(String label, String value, IconData icon, bool isMobile) {
+  Widget _buildStatItem(
+    String label,
+    String value,
+    IconData icon,
+    bool isMobile,
+  ) {
     return Container(
       padding: EdgeInsets.all(isMobile ? 12 : 16),
       decoration: BoxDecoration(
@@ -527,10 +838,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
               ),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.greyText,
-                ),
+                style: TextStyle(fontSize: 12, color: AppTheme.greyText),
               ),
             ],
           ),
@@ -539,9 +847,15 @@ class _UserAccountPageState extends State<UserAccountPage> {
     );
   }
 
-  Widget _buildRecipesTab(User user, bool isMobile) {
+  Widget _buildRecipesTab(User user, bool isMobile, {double bottomInset = 0}) {
     return SingleChildScrollView(
-      padding: EdgeInsets.all(isMobile ? 16 : 32),
+      padding: EdgeInsets.fromLTRB(
+        isMobile ? 16 : 32,
+        isMobile ? 16 : 32,
+        isMobile ? 16 : 32,
+        (isMobile ? 16 : 32) + bottomInset,
+      ),
+      physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -561,10 +875,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
                 const SizedBox(height: 4),
                 Text(
                   'Your AI-crafted masterpieces',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.greyText,
-                  ),
+                  style: TextStyle(fontSize: 14, color: AppTheme.greyText),
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
@@ -573,7 +884,9 @@ class _UserAccountPageState extends State<UserAccountPage> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const RecipeFormPage()),
+                        MaterialPageRoute(
+                          builder: (context) => const RecipeFormPage(),
+                        ),
                       );
                     },
                     icon: const Icon(Icons.add),
@@ -601,10 +914,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
                     SizedBox(height: 8),
                     Text(
                       'Your AI-crafted masterpieces',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppTheme.greyText,
-                      ),
+                      style: TextStyle(fontSize: 16, color: AppTheme.greyText),
                     ),
                   ],
                 ),
@@ -612,7 +922,9 @@ class _UserAccountPageState extends State<UserAccountPage> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const RecipeFormPage()),
+                      MaterialPageRoute(
+                        builder: (context) => const RecipeFormPage(),
+                      ),
                     );
                   },
                   icon: const Icon(Icons.add),
@@ -624,10 +936,12 @@ class _UserAccountPageState extends State<UserAccountPage> {
           MyRecipesFeed(
             key: _myRecipesKey,
             userId: user.uid,
-            recipeCardBuilder: (recipe) => Padding(
-              padding: EdgeInsets.only(bottom: isMobile ? 16 : 0),
-              child: _buildRecipeCard(recipe),
-            ),
+            nestedInScrollView: true,
+            recipeCardBuilder:
+                (recipe) => Padding(
+                  padding: EdgeInsets.only(bottom: isMobile ? 16 : 0),
+                  child: _buildRecipeCard(recipe),
+                ),
           ),
         ],
       ),
@@ -640,9 +954,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => RecipeDetailPage(
-              recipe: recipe,
-            ),
+            builder: (context) => RecipeDetailPage(recipe: recipe),
           ),
         );
       },
@@ -650,48 +962,49 @@ class _UserAccountPageState extends State<UserAccountPage> {
         decoration: BoxDecoration(
           color: AppTheme.cardBackground,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppTheme.primaryGreen.withOpacity(0.2),
-          ),
+          border: Border.all(color: AppTheme.primaryGreen.withOpacity(0.2)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty
-                  ? kIsWeb
-                      ? WebImage(
-                          imageUrl: recipe.imageUrl!,
-                          height: 150,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return _buildPlaceholderImage(150);
-                          },
-                        )
-                      : Image.network(
-                          recipe.imageUrl!,
-                          height: 150,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              height: 150,
-                              color: AppTheme.cardBackground,
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  color: AppTheme.primaryGreen,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              child:
+                  recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty
+                      ? kIsWeb
+                          ? WebImage(
+                            imageUrl: recipe.imageUrl!,
+                            height: 150,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return _buildPlaceholderImage(150);
+                            },
+                          )
+                          : Image.network(
+                            recipe.imageUrl!,
+                            height: 150,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (context, child, loadingProgress) {
+                              if (loadingProgress == null) return child;
+                              return Container(
+                                height: 150,
+                                color: AppTheme.cardBackground,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppTheme.primaryGreen,
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return _buildPlaceholderImage(150);
-                          },
-                        )
-                  : _buildPlaceholderImage(150),
+                              );
+                            },
+                            errorBuilder: (context, error, stackTrace) {
+                              return _buildPlaceholderImage(150);
+                            },
+                          )
+                      : _buildPlaceholderImage(150),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -759,10 +1072,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  const Divider(
-                    color: AppTheme.greyText,
-                    height: 20,
-                  ),
+                  const Divider(color: AppTheme.greyText, height: 20),
                   Row(
                     children: [
                       Icon(
@@ -824,11 +1134,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
         ),
       ),
       child: const Center(
-        child: Icon(
-          Icons.restaurant,
-          size: 60,
-          color: AppTheme.primaryGreen,
-        ),
+        child: Icon(Icons.restaurant, size: 60, color: AppTheme.primaryGreen),
       ),
     );
   }
@@ -857,10 +1163,7 @@ class _UserAccountPageState extends State<UserAccountPage> {
             const SizedBox(height: 12),
             const Text(
               'Start creating your culinary masterpieces!',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppTheme.greyText,
-              ),
+              style: TextStyle(fontSize: 16, color: AppTheme.greyText),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -868,7 +1171,9 @@ class _UserAccountPageState extends State<UserAccountPage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const RecipeFormPage()),
+                  MaterialPageRoute(
+                    builder: (context) => const RecipeFormPage(),
+                  ),
                 );
               },
               icon: const Icon(Icons.add),

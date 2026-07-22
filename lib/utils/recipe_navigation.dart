@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../models/recipe_model.dart';
+import '../screens/main_shell_page.dart';
 import '../screens/recipe_detail_page.dart';
-import '../screens/user_account_page.dart';
 
 class RecipeNavigation {
-  static const int myRecipesTab = 1;
+  static const int myRecipesTab = MainShellPage.myRecipesTab;
 
   static void openRecipeDetail(BuildContext context, RecipeModel recipe) {
     Navigator.of(context).push(
@@ -22,7 +22,9 @@ class RecipeNavigation {
   ) {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const UserAccountPage(initialTab: myRecipesTab),
+        builder: (_) => const MainShellPage(
+          initialIndex: MainShellPage.myRecipesTab,
+        ),
       ),
       (route) => false,
     );
@@ -35,7 +37,9 @@ class RecipeNavigation {
     } else {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (_) => const UserAccountPage(initialTab: myRecipesTab),
+          builder: (_) => const MainShellPage(
+            initialIndex: MainShellPage.myRecipesTab,
+          ),
         ),
         (route) => false,
       );

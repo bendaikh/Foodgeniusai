@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:344064372155:android:0939560f6082ec3035a89e",
+        "mobilesdk_app_id": "1:344064372155:android:6b1925804b3dc59035a89e",
         "android_client_info": {
-          "package_name": "com.gourmetai.app"
+          "package_name": "com.foodgenius.ai"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "344064372155-io763ca9me1p4ep7ono46f0o4p66r0re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCCmVcmaR9C-FRJz_B2MlfcgNG-WemFQQU"
@@ -20,7 +25,49 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "344064372155-io763ca9me1p4ep7ono46f0o4p66r0re.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:344064372155:android:0939560f6082ec3035a89e",
+        "android_client_info": {
+          "package_name": "com.gourmetai.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "344064372155-ckfbphvo7hbiu56bt8dihsaqbq0604d8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gourmetai.app",
+            "certificate_hash": "53769228b4d792e22dc5bcc631573d91a532406f"
+          }
+        },
+        {
+          "client_id": "344064372155-io763ca9me1p4ep7ono46f0o4p66r0re.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCCmVcmaR9C-FRJz_B2MlfcgNG-WemFQQU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "344064372155-io763ca9me1p4ep7ono46f0o4p66r0re.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

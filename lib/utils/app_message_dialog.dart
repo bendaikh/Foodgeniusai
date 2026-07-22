@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../exceptions/free_recipe_limit_exception.dart';
 import '../exceptions/generation_limit_exception.dart';
 import '../theme/app_theme.dart';
 
@@ -121,10 +122,12 @@ class AppMessageDialog {
     return error
         .toString()
         .replaceFirst('Exception: ', '')
-        .replaceFirst('GenerationLimitException: ', '');
+        .replaceFirst('GenerationLimitException: ', '')
+        .replaceFirst('FreeRecipeLimitException: ', '');
   }
 
   static bool isGenerationLimitError(Object error) {
+    if (error is FreeRecipeLimitException) return false;
     return error is GenerationLimitException ||
         error.toString().contains('used all') &&
             error.toString().contains('generations');
