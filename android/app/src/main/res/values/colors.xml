@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#6ABD58</color>
+    <!-- Matches AppTheme.darkBackground (#081421) to avoid white flash -->
+    <color name="splash_background">#081421</color>
+</resources>

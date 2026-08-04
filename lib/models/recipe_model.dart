@@ -21,6 +21,8 @@ class RecipeModel {
   final int views;
   final int saves;
   final bool isPublic;
+  /// Explicit user bookmark (Saved tab). Independent of generation history.
+  final bool isSaved;
 
   RecipeModel({
     this.id,
@@ -43,6 +45,7 @@ class RecipeModel {
     this.views = 0,
     this.saves = 0,
     this.isPublic = true,
+    this.isSaved = false,
   });
 
   factory RecipeModel.fromFirestore(DocumentSnapshot doc) {
@@ -68,6 +71,7 @@ class RecipeModel {
       views: data['views'] ?? 0,
       saves: data['saves'] ?? 0,
       isPublic: data['isPublic'] ?? true,
+      isSaved: data['isSaved'] == true,
     );
   }
 
@@ -92,6 +96,7 @@ class RecipeModel {
       'views': views,
       'saves': saves,
       'isPublic': isPublic,
+      'isSaved': isSaved,
     };
   }
 
@@ -118,6 +123,7 @@ class RecipeModel {
       'views': views,
       'saves': saves,
       'isPublic': isPublic,
+      'isSaved': isSaved,
     };
   }
 
@@ -145,6 +151,7 @@ class RecipeModel {
       views: (json['views'] as num?)?.toInt() ?? 0,
       saves: (json['saves'] as num?)?.toInt() ?? 0,
       isPublic: json['isPublic'] as bool? ?? true,
+      isSaved: json['isSaved'] == true,
     );
   }
 }

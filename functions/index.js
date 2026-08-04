@@ -227,21 +227,48 @@ async function claimPendingRecipe(userId) {
 async function activateUserSubscription(uid, tier, extraFields = {}) {
   const userRef = getFirestore().collection('users').doc(uid);
   const userDoc = await userRef.get();
-  const existingUsed = userDoc.exists
-    ? userDoc.data().monthlyGenerationsUsed || 0
-    : 0;
+  const existingData = userDoc.exists ? userDoc.data() || {} : {};
+  const existingUsed = existingData.monthlyGenerationsUsed || 0;
 
-  await userRef.set(
-      {
-        subscriptionTier: tier,
-        subscriptionStatus: 'active',
-        subscriptionUpdatedAt: new Date(),
-        monthlyGenerationsUsed: existingUsed,
-        generationPeriodStart: new Date(),
-        ...extraFields,
-      },
-      { merge: true },
-    );
+  const updates = {
+    subscriptionTier: tier,
+    subscriptionStatus: 'active',
+    subscriptionUpdatedAt: new Date(),
+    monthlyGenerationsUsed: existingUsed,
+    generationPeriodStart: new Date(),
+    ...extraFields,
+  };
+
+  // When RevenueCat reports a new billing-period start (renewal), reset the
+  // Fridge Scan counter so quota refreshes with the subscription cycle.
+  const incomingBilling = extraFields.subscriptionBillingPeriodStart;
+  if (incomingBilling) {
+    const newBillingStart =
+      incomingBilling instanceof Date
+        ? incomingBilling
+        : new Date(incomingBilling);
+    const previousBilling =
+      existingData.subscriptionBillingPeriodStart?.toDate?.() || null;
+    updates.subscriptionBillingPeriodStart = newBillingStart;
+
+    if (
+      previousBilling &&
+      newBillingStart.getTime() > previousBilling.getTime()
+    ) {
+      updates.monthlyFridgeScansUsed = 0;
+      updates.fridgeScanPeriodStart = newBillingStart;
+      console.log('[FridgeScanQuota] billing period rolled — reset scans', {
+        uid,
+        tier,
+        previousBilling: previousBilling.toISOString(),
+        newBillingStart: newBillingStart.toISOString(),
+      });
+    } else if (!existingData.fridgeScanPeriodStart) {
+      updates.fridgeScanPeriodStart = newBillingStart;
+    }
+  }
+
+  await userRef.set(updates, { merge: true });
 
   try {
     await claimPendingRecipe(uid);
@@ -258,8 +285,222 @@ function isSameMonth(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 }
 
+/** Canonical RevenueCat tiers — server source of truth for paid quotas. */
+const REVENUECAT_TIER_LIMITS = {
+  basic: { recipes: 20, fridgeScans: 5 },
+  pro: { recipes: null, fridgeScans: 20 }, // null = unlimited
+  premium: { recipes: null, fridgeScans: null },
+};
+
+/** Highest → lowest. Used for restore / multi-product selection. */
+const REVENUECAT_TIERS_BY_PRIORITY = ['premium', 'pro', 'basic'];
+
+function isValidRevenueCatTier(tier) {
+  return REVENUECAT_TIERS_BY_PRIORITY.includes(tier);
+}
+
+/**
+ * Infer a tier from a store / package product identifier.
+ * Checked in priority order so "premium" wins over a naive "pro" substring.
+ */
+function tierFromProductIdentifier(productId) {
+  if (!productId || typeof productId !== 'string') return null;
+  const id = productId.toLowerCase();
+  if (id.includes('premium')) return 'premium';
+  if (id.includes('pro')) return 'pro';
+  if (id.includes('basic')) return 'basic';
+  return null;
+}
+
+/**
+ * Pick the highest tier among a list of product identifiers.
+ * @returns {'basic'|'pro'|'premium'|null}
+ */
+function highestTierFromProductIds(productIds) {
+  const ids = Array.isArray(productIds)
+    ? productIds.filter((id) => typeof id === 'string' && id.length > 0)
+    : [];
+  const matched = new Set();
+  for (const productId of ids) {
+    const tier = tierFromProductIdentifier(productId);
+    if (tier) matched.add(tier);
+  }
+  for (const tier of REVENUECAT_TIERS_BY_PRIORITY) {
+    if (matched.has(tier)) return tier;
+  }
+  return null;
+}
+
+/**
+ * Optional RevenueCat REST verification when a secret key is configured in
+ * admin_settings/payment_settings.revenuecat_secret_api_key.
+ *
+ * @returns {Promise<'basic'|'pro'|'premium'|null|'unavailable'>}
+ *   tier string when verified, null when subscriber has no recognized paid
+ *   product, 'unavailable' when the API key is missing or the call failed.
+ */
+async function resolveTierFromRevenueCatApi(appUserId) {
+  if (!appUserId) return 'unavailable';
+
+  try {
+    const settingsDoc = await getFirestore()
+      .collection('admin_settings')
+      .doc('payment_settings')
+      .get();
+    const secret =
+      settingsDoc.exists
+        ? settingsDoc.data().revenuecat_secret_api_key
+        : null;
+    if (!secret || typeof secret !== 'string') {
+      return 'unavailable';
+    }
+
+    const response = await fetch(
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(appUserId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (!response.ok) {
+      console.error(
+        'RevenueCat subscriber lookup failed',
+        response.status,
+        await response.text(),
+      );
+      return 'unavailable';
+    }
+
+    const body = await response.json();
+    const subscriber = body.subscriber || {};
+    const productIds = new Set();
+
+    const entitlements = subscriber.entitlements || {};
+    for (const [key, entitlement] of Object.entries(entitlements)) {
+      if (!entitlement) continue;
+      const expires = entitlement.expires_date
+        ? new Date(entitlement.expires_date)
+        : null;
+      const active = !expires || expires.getTime() > Date.now();
+      if (!active) continue;
+      if (entitlement.product_identifier) {
+        productIds.add(entitlement.product_identifier);
+      }
+      // Prefer the paid entitlement named `premium` when present.
+      if (key === 'premium' && entitlement.product_identifier) {
+        productIds.add(entitlement.product_identifier);
+      }
+    }
+
+    const subscriptions = subscriber.subscriptions || {};
+    for (const [productId, sub] of Object.entries(subscriptions)) {
+      if (!sub) continue;
+      const expires = sub.expires_date ? new Date(sub.expires_date) : null;
+      const active = !expires || expires.getTime() > Date.now();
+      if (active) productIds.add(productId);
+    }
+
+    return highestTierFromProductIds([...productIds]);
+  } catch (error) {
+    console.error('RevenueCat API tier resolve failed', error);
+    return 'unavailable';
+  }
+}
+
+/**
+ * @returns {{ unlimited: boolean, limit: number|null }}
+ * limit is null when unlimited; otherwise a non-negative monthly cap.
+ */
+function recipeLimitForTier(tier) {
+  if (!tier || tier === 'free') {
+    return { unlimited: false, limit: 0 };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(REVENUECAT_TIER_LIMITS, tier)) {
+    const recipes = REVENUECAT_TIER_LIMITS[tier].recipes;
+    if (recipes === null) return { unlimited: true, limit: null };
+    return { unlimited: false, limit: recipes };
+  }
+
+  // Legacy / Web Dodo plans: look up Firestore subscription_plans/{id}.
+  return { unlimited: false, limit: null, needsFirestoreLookup: true };
+}
+
+/**
+ * @returns {{ unlimited: boolean, limit: number|null }}
+ *
+ * RevenueCat tiers use REVENUECAT_TIER_LIMITS only. Unrecognized RevenueCat
+ * profiles fail closed (limit 0) — never unlimited. Legacy non-RC paid tiers
+ * (web/Dodo) keep unlimited fridge scans.
+ */
+function fridgeScanLimitForTier(tier, subscriptionSource) {
+  if (!tier || tier === 'free') {
+    return { unlimited: false, limit: 0 };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(REVENUECAT_TIER_LIMITS, tier)) {
+    const scans = REVENUECAT_TIER_LIMITS[tier].fridgeScans;
+    if (scans === null) return { unlimited: true, limit: null };
+    if (typeof scans === 'number' && scans >= 0) {
+      return { unlimited: false, limit: scans };
+    }
+  }
+
+  // Mis-synced / unknown RevenueCat plan must never unlock unlimited scans.
+  if (subscriptionSource === 'revenue_cat' || isValidRevenueCatTier(tier)) {
+    console.warn(
+      'fridgeScanLimitForTier: unrecognized RevenueCat tier — denying scans',
+      tier,
+    );
+    return { unlimited: false, limit: 0 };
+  }
+
+  // Legacy web / Dodo paid tiers without an explicit fridge product.
+  return { unlimited: true, limit: null };
+}
+
+/**
+ * Resolve Fridge Scan usage for the active billing period.
+ *
+ * Prefer RevenueCat `subscriptionBillingPeriodStart` (renewal / purchase
+ * boundary). Fall back to calendar-month windows when billing data is absent
+ * (legacy / web profiles).
+ *
+ * @returns {{ used: number, periodStart: Date }}
+ */
+function resolveFridgeScanPeriod(userData, now = new Date()) {
+  let used = userData.monthlyFridgeScansUsed || 0;
+  let periodStart = userData.fridgeScanPeriodStart?.toDate?.() || null;
+  const billingStart =
+    userData.subscriptionBillingPeriodStart?.toDate?.() || null;
+
+  if (billingStart) {
+    if (!periodStart || periodStart.getTime() < billingStart.getTime()) {
+      used = 0;
+      periodStart = billingStart;
+    }
+    return { used, periodStart };
+  }
+
+  if (!periodStart || !isSameMonth(periodStart, now)) {
+    used = 0;
+    periodStart = startOfCurrentMonth(now);
+  }
+  return { used, periodStart };
+}
+
 async function getPlanMonthlyGenerationLimit(planId) {
-  if (!planId || planId === 'free') return 0;
+  const resolved = recipeLimitForTier(planId);
+  if (!resolved.needsFirestoreLookup) {
+    return resolved;
+  }
+
+  if (!planId || planId === 'free') {
+    return { unlimited: false, limit: 0 };
+  }
 
   const planDoc = await getFirestore()
     .collection('subscription_plans')
@@ -268,12 +509,52 @@ async function getPlanMonthlyGenerationLimit(planId) {
 
   if (planDoc.exists) {
     const limit = planDoc.data().monthlyGenerationLimit;
-    if (typeof limit === 'number') return limit;
+    if (typeof limit === 'number') {
+      // Negative values mean unlimited for legacy admin plans.
+      if (limit < 0) return { unlimited: true, limit: null };
+      return { unlimited: false, limit };
+    }
   }
 
-  if (planId === 'pro') return 25;
-  if (planId === 'elite') return 50;
-  return 0;
+  return { unlimited: false, limit: 0 };
+}
+
+function buildQuotaStatusPayload({
+  unlimited,
+  limit,
+  used,
+  tier,
+  planId,
+}) {
+  if (unlimited) {
+    return {
+      unlimited: true,
+      limit: null,
+      used: String(used),
+      remaining: null,
+      tier,
+      planId,
+    };
+  }
+
+  const safeLimit = typeof limit === 'number' ? limit : 0;
+  return {
+    unlimited: false,
+    limit: String(safeLimit),
+    used: String(used),
+    remaining: String(Math.max(0, safeLimit - used)),
+    tier,
+    planId,
+  };
+}
+
+function periodUsed(userData, usedField, periodField, now) {
+  let used = userData[usedField] || 0;
+  const periodStart = userData[periodField]?.toDate?.() || null;
+  if (periodStart && !isSameMonth(periodStart, now)) {
+    used = 0;
+  }
+  return used;
 }
 
 async function getRecipeGenerationStatus(uid) {
@@ -283,30 +564,49 @@ async function getRecipeGenerationStatus(uid) {
   const status = userData.subscriptionStatus || 'active';
 
   if (status !== 'active') {
-    return { limit: '0', used: '0', remaining: '0', tier, planId: tier };
+    return buildQuotaStatusPayload({
+      unlimited: false,
+      limit: 0,
+      used: 0,
+      tier,
+      planId: tier,
+    });
   }
 
-  const limit = await getPlanMonthlyGenerationLimit(tier);
+  const plan = await getPlanMonthlyGenerationLimit(tier);
   const now = new Date();
-  let used = userData.monthlyGenerationsUsed || 0;
-  const periodStart = userData.generationPeriodStart?.toDate?.() || null;
+  const used = periodUsed(
+    userData,
+    'monthlyGenerationsUsed',
+    'generationPeriodStart',
+    now,
+  );
 
-  if (periodStart && !isSameMonth(periodStart, now)) {
-    used = 0;
-  }
-
-  return {
-    limit: String(limit),
-    used: String(used),
-    remaining: String(Math.max(0, limit - used)),
+  return buildQuotaStatusPayload({
+    unlimited: plan.unlimited,
+    limit: plan.limit,
+    used,
     tier,
     planId: tier,
-  };
+  });
 }
 
 async function consumeRecipeGeneration(uid) {
   const db = getFirestore();
   const userRef = db.collection('users').doc(uid);
+
+  // Resolve plan outside the transaction (may read subscription_plans).
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new HttpsError('not-found', 'User profile not found.');
+  }
+  const preview = userSnap.data();
+  const previewTier = preview.subscriptionTier || 'free';
+  const previewStatus = preview.subscriptionStatus || 'active';
+  if (previewStatus !== 'active') {
+    throw new HttpsError('permission-denied', 'Your subscription is not active.');
+  }
+  const plan = await getPlanMonthlyGenerationLimit(previewTier);
 
   return db.runTransaction(async (tx) => {
     const userDoc = await tx.get(userRef);
@@ -322,8 +622,7 @@ async function consumeRecipeGeneration(uid) {
       throw new HttpsError('permission-denied', 'Your subscription is not active.');
     }
 
-    const planLimit = await getPlanMonthlyGenerationLimit(tier);
-    if (planLimit <= 0) {
+    if (!plan.unlimited && (plan.limit == null || plan.limit <= 0)) {
       throw new HttpsError(
         'permission-denied',
         'Subscribe to a plan to generate AI recipes.',
@@ -339,10 +638,10 @@ async function consumeRecipeGeneration(uid) {
       periodStart = startOfCurrentMonth(now);
     }
 
-    if (used >= planLimit) {
+    if (!plan.unlimited && used >= plan.limit) {
       throw new HttpsError(
         'resource-exhausted',
-        `You've used all ${planLimit} AI recipe generations for this month. Your limit resets at the start of next month.`,
+        `You've used all ${plan.limit} AI recipe generations for this month. Your limit resets at the start of next month.`,
       );
     }
 
@@ -354,13 +653,128 @@ async function consumeRecipeGeneration(uid) {
       apiUsageCount: FieldValue.increment(1),
     });
 
-    return {
-      limit: String(planLimit),
-      used: String(newUsed),
-      remaining: String(planLimit - newUsed),
+    return buildQuotaStatusPayload({
+      unlimited: plan.unlimited,
+      limit: plan.limit,
+      used: newUsed,
       tier,
       planId: tier,
-    };
+    });
+  });
+}
+
+async function getFridgeScanStatus(uid) {
+  const userDoc = await getFirestore().collection('users').doc(uid).get();
+  const userData = userDoc.data() || {};
+  const tier = userData.subscriptionTier || 'free';
+  const status = userData.subscriptionStatus || 'active';
+
+  if (status !== 'active' || tier === 'free') {
+    console.log('[FridgeScanQuota] status blocked', { uid, tier, status });
+    return buildQuotaStatusPayload({
+      unlimited: false,
+      limit: 0,
+      used: 0,
+      tier,
+      planId: tier,
+    });
+  }
+
+  const plan = fridgeScanLimitForTier(tier, userData.subscriptionSource);
+  const { used } = resolveFridgeScanPeriod(userData);
+  const payload = buildQuotaStatusPayload({
+    unlimited: plan.unlimited,
+    limit: plan.limit,
+    used,
+    tier,
+    planId: tier,
+  });
+  console.log('[FridgeScanQuota] status', {
+    uid,
+    activePlan: tier,
+    scanLimit: plan.unlimited ? 'unlimited' : plan.limit,
+    scansUsed: used,
+    scansRemaining: payload.remaining,
+    allowed: plan.unlimited || Number(payload.remaining) > 0,
+  });
+  return payload;
+}
+
+async function consumeFridgeScan(uid) {
+  const db = getFirestore();
+  const userRef = db.collection('users').doc(uid);
+
+  return db.runTransaction(async (tx) => {
+    const userDoc = await tx.get(userRef);
+    if (!userDoc.exists) {
+      throw new HttpsError('not-found', 'User profile not found.');
+    }
+
+    const userData = userDoc.data();
+    const tier = userData.subscriptionTier || 'free';
+    const status = userData.subscriptionStatus || 'active';
+
+    if (status !== 'active' || tier === 'free') {
+      throw new HttpsError(
+        'permission-denied',
+        'Subscribe to a plan to use Fridge Scan.',
+      );
+    }
+
+    const plan = fridgeScanLimitForTier(tier, userData.subscriptionSource);
+    const { used, periodStart } = resolveFridgeScanPeriod(userData);
+
+    if (!plan.unlimited) {
+      if (plan.limit == null || plan.limit <= 0) {
+        console.log('[FridgeScanQuota] consume blocked — no scan entitlement', {
+          uid,
+          activePlan: tier,
+          scanLimit: plan.limit,
+          scansUsed: used,
+        });
+        throw new HttpsError(
+          'permission-denied',
+          'Fridge Scan is not available on your plan.',
+        );
+      }
+      if (used >= plan.limit) {
+        console.log('[FridgeScanQuota] consume blocked — limit reached', {
+          uid,
+          activePlan: tier,
+          scanLimit: plan.limit,
+          scansUsed: used,
+          scansRemaining: 0,
+          allowed: false,
+        });
+        throw new HttpsError(
+          'resource-exhausted',
+          `You've used all ${plan.limit} Fridge Scans for this billing period. Upgrade your plan for more scans.`,
+        );
+      }
+    }
+
+    const newUsed = used + 1;
+    tx.update(userRef, {
+      monthlyFridgeScansUsed: newUsed,
+      fridgeScanPeriodStart: periodStart,
+    });
+
+    const payload = buildQuotaStatusPayload({
+      unlimited: plan.unlimited,
+      limit: plan.limit,
+      used: newUsed,
+      tier,
+      planId: tier,
+    });
+    console.log('[FridgeScanQuota] consume success', {
+      uid,
+      activePlan: tier,
+      scanLimit: plan.unlimited ? 'unlimited' : plan.limit,
+      scansUsed: newUsed,
+      scansRemaining: payload.remaining,
+      allowed: true,
+    });
+    return payload;
   });
 }
 
@@ -892,6 +1306,127 @@ exports.consumeRecipeGeneration = onCall({ region: 'us-central1' }, async (reque
 
   return consumeRecipeGeneration(request.auth.uid);
 });
+
+exports.getFridgeScanStatus = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in.');
+  }
+
+  if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Create an account to track Fridge Scans.');
+  }
+
+  return getFridgeScanStatus(request.auth.uid);
+});
+
+exports.consumeFridgeScan = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'You must be signed in.');
+  }
+
+  if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+    throw new HttpsError('permission-denied', 'Create an account to use Fridge Scan.');
+  }
+
+  return consumeFridgeScan(request.auth.uid);
+});
+
+/**
+ * Trusted write path for iOS RevenueCat purchase / restore.
+ *
+ * Clients may no longer write subscriptionTier/status (or related quota
+ * fields) directly — Firestore rules block those keys. This callable is the
+ * only normal-user path that activates a RevenueCat tier.
+ *
+ * Resolution order:
+ * 1. If a RevenueCat secret key is configured, derive the tier from the
+ *    subscriber's active products via the RevenueCat REST API.
+ * 2. Otherwise derive from the client-supplied productIds (same mapping:
+ *    premium > pro > basic).
+ * 3. Fall back to the client-supplied tier only when it is a valid
+ *    basic/pro/premium value AND at least one productId was provided that
+ *    maps to that same tier (or productIds were empty but the tier is valid
+ *    — still refuse unknown tiers).
+ *
+ * Never defaults a restore to premium.
+ */
+exports.syncRevenueCatSubscription = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'You must be signed in.');
+    }
+
+    if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+      throw new HttpsError(
+        'permission-denied',
+        'Create an account to sync a subscription.',
+      );
+    }
+
+    const uid = request.auth.uid;
+    const requestedTier = request.data?.tier;
+    const productIds = Array.isArray(request.data?.productIds)
+      ? request.data.productIds
+      : [];
+    const appUserId =
+      (typeof request.data?.appUserId === 'string' &&
+        request.data.appUserId.trim()) ||
+      uid;
+    const billingPeriodStartMs = Number(request.data?.billingPeriodStartMs);
+    const hasBillingPeriodStart =
+      Number.isFinite(billingPeriodStartMs) && billingPeriodStartMs > 0;
+
+    let resolvedTier = null;
+
+    const apiTier = await resolveTierFromRevenueCatApi(appUserId);
+    if (apiTier !== 'unavailable') {
+      // API responded — trust it exclusively (null means no active paid plan).
+      resolvedTier = apiTier;
+    } else {
+      // No secret / API unavailable: derive ONLY from verified product IDs.
+      // Never accept a bare client-requested tier (prevents self-upgrade).
+      // Same mapping as the app: premium > pro > basic.
+      const fromProducts = highestTierFromProductIds(productIds);
+      if (fromProducts) {
+        resolvedTier = fromProducts;
+        if (
+          isValidRevenueCatTier(requestedTier) &&
+          requestedTier !== fromProducts
+        ) {
+          console.log(
+            'syncRevenueCatSubscription: client tier',
+            requestedTier,
+            'overridden by product-derived',
+            fromProducts,
+            'for',
+            uid,
+          );
+        }
+      }
+    }
+
+    if (!resolvedTier || !isValidRevenueCatTier(resolvedTier)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'No active recognized subscription product was found.',
+      );
+    }
+
+    const activateExtras = {
+      subscriptionSource: 'revenue_cat',
+    };
+    if (hasBillingPeriodStart) {
+      activateExtras.subscriptionBillingPeriodStart = new Date(
+        billingPeriodStartMs,
+      );
+    }
+
+    await activateUserSubscription(uid, resolvedTier, activateExtras);
+
+    return { success: true, tier: resolvedTier };
+  },
+);
 
 exports.dodoPaymentsWebhook = onRequest({ cors: false }, async (req, res) => {
   if (req.method !== 'POST') {

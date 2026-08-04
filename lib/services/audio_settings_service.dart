@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Global on/off for app audio (voice guide, cooking ambience, etc.).
+/// Global on/off for optional app audio (voice guide / TTS, etc.).
+///
+/// Cooking-generation ambience is independent of [soundEnabled] and always
+/// plays during recipe generation (device volume / silent mode still apply).
 class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
   AudioSettingsService._();
 
@@ -69,10 +72,6 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
     _soundEnabled = enabled;
     notifyListeners();
 
-    if (!enabled) {
-      await stopCookingGenerationSound();
-    }
-
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsKey, enabled);
@@ -110,11 +109,10 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Subtle looping kitchen ambience while a recipe is being generated.
   ///
-  /// No-ops when audio is disabled. Always stops any previous cooking loop
-  /// first so players never overlap.
+  /// Always plays during generation, independent of [soundEnabled]. Stops any
+  /// previous cooking loop first so players never overlap.
   Future<void> startCookingGenerationSound() async {
     await stopCookingGenerationSound();
-    if (!_soundEnabled) return;
 
     try {
       final pause = pauseOverlappingAudio;

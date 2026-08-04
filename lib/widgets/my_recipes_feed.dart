@@ -16,12 +16,20 @@ class MyRecipesFeed extends StatefulWidget {
   /// When true, this feed lives inside a parent scroll view and must not
   /// compete for vertical drag gestures.
   final bool nestedInScrollView;
+  /// When true, only recipes with [RecipeModel.isSaved] appear (Saved tab).
+  final bool savedOnly;
+  final String emptyTitle;
+  final String emptyMessage;
 
   const MyRecipesFeed({
     super.key,
     required this.userId,
     this.recipeCardBuilder,
     this.nestedInScrollView = false,
+    this.savedOnly = false,
+    this.emptyTitle = 'No Recipes Yet',
+    this.emptyMessage =
+        'Generate a recipe and it will appear here — even if you haven\'t finished payment yet.',
   });
 
   @override
@@ -101,7 +109,7 @@ class MyRecipesFeedState extends State<MyRecipesFeed> {
         final recipes = _recipeGenerationService.mergePendingRecipes(
           widget.userId,
           snapshot.data ?? [],
-        );
+        ).where((r) => !widget.savedOnly || r.isSaved).toList();
 
         if (_syncError != null && recipes.isEmpty) {
           return Center(
@@ -139,18 +147,18 @@ class MyRecipesFeedState extends State<MyRecipesFeed> {
                     color: AppTheme.greyText.withOpacity(0.5),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'No Recipes Yet',
-                    style: TextStyle(
+                  Text(
+                    widget.emptyTitle,
+                    style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Generate a recipe and it will appear here — even if you haven\'t finished payment yet.',
-                    style: TextStyle(color: AppTheme.greyText),
+                  Text(
+                    widget.emptyMessage,
+                    style: const TextStyle(color: AppTheme.greyText),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),

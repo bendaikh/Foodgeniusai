@@ -8,8 +8,10 @@
 //
 // Writes still require auth; the admin UI enforces admin role on top.
 //
-// If you already have custom rules elsewhere, merge the admin_settings match
-// block into your existing rules instead of replacing this file wholesale.
+// Subscription / quota fields on users/{userId} are protected: normal clients
+// cannot self-assign or upgrade them. Trusted writers are:
+//   - Cloud Functions (Admin SDK — bypasses these rules)
+//   - Admin users (isAdmin())
 //
 // Deploy with:
 //   firebase deploy --only firestore:rules
@@ -22,6 +24,50 @@ service cloud.firestore {
       return request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Fields that control paid access / quotas. Must not be client-writable
+    // by normal users (purchase/restore goes through Cloud Functions).
+    function subscriptionFieldKeys() {
+      return [
+        'subscriptionTier',
+        'subscriptionStatus',
+        'subscriptionExpiresAt',
+        'subscriptionUpdatedAt',
+        'subscriptionSource',
+        'subscriptionPlanId',
+        'subscriptionBillingPeriodStart',
+        'monthlyGenerationsUsed',
+        'generationPeriodStart',
+        'monthlyFridgeScansUsed',
+        'fridgeScanPeriodStart'
+      ];
+    }
+
+    function changesSubscriptionFields() {
+      return request.resource.data
+        .diff(resource.data)
+        .affectedKeys()
+        .hasAny(subscriptionFieldKeys());
+    }
+
+    // New accounts may only seed free / inactive subscription defaults.
+    function createSubscriptionFieldsAreSafe() {
+      let data = request.resource.data;
+      let tier = data.get('subscriptionTier', 'free');
+      let status = data.get('subscriptionStatus', 'active');
+      return tier == 'free'
+        && status in ['active', 'inactive', 'canceled', 'cancelled', 'free']
+        && !data.keys().hasAny([
+          'subscriptionExpiresAt',
+          'subscriptionSource',
+          'subscriptionPlanId',
+          'subscriptionBillingPeriodStart'
+        ]);
     }
 
     // Publicly-readable branding metadata (favicon URL, app name, etc.).
@@ -59,10 +105,17 @@ service cloud.firestore {
     }
 
     // User profiles.
+    // - Owners may update non-subscription profile fields (name, prefs, etc.).
+    // - Subscription / quota fields: Cloud Functions (Admin SDK) or admins only.
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
+
+      allow create: if isAdmin()
+        || (isOwner(userId) && createSubscriptionFieldsAreSafe());
+
+      allow update: if isAdmin()
+        || (isOwner(userId) && !changesSubscriptionFields());
+
       allow delete: if false;
     }
 

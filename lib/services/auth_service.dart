@@ -2,6 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../config/dev_flags.dart';
+
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -20,6 +22,8 @@ class AuthService {
 
   /// Whether the user has an active paid subscription.
   bool hasPaidSubscription(Map<String, dynamic>? userData) {
+    // TEST ONLY — see lib/config/dev_flags.dart
+    if (kTestSubscriptionBypass) return true;
     if (userData == null) return false;
     final tier = userData['subscriptionTier'] as String? ?? 'free';
     final status = userData['subscriptionStatus'] as String? ?? 'active';

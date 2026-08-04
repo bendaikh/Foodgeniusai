@@ -206,7 +206,13 @@ class PendingRecipeService {
 }
 
 extension RecipeModelCopyWith on RecipeModel {
-  RecipeModel copyWith({String? id, String? userId}) {
+  RecipeModel copyWith({
+    String? id,
+    String? userId,
+    String? imageUrl,
+    bool? isSaved,
+    bool clearImageUrl = false,
+  }) {
     return RecipeModel(
       id: id ?? this.id,
       userId: userId ?? this.userId,
@@ -223,11 +229,12 @@ extension RecipeModelCopyWith on RecipeModel {
       cuisine: cuisine,
       mealType: mealType,
       dietary: dietary,
-      imageUrl: imageUrl,
+      imageUrl: clearImageUrl ? null : (imageUrl ?? this.imageUrl),
       createdAt: createdAt,
       views: views,
       saves: saves,
       isPublic: isPublic,
+      isSaved: isSaved ?? this.isSaved,
     );
   }
 }

@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Gourmetai</string>
+	<string>Food Genius AI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -60,7 +60,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>FoodGeniusAI uses the camera to scan ingredients and help generate recipes.</string>
+	<string>Food Genius AI needs camera access so you can scan fridge and pantry ingredients to generate recipes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Food Genius AI needs photo library access so you can choose ingredient photos from your gallery for fridge scanning and recipe ideas.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

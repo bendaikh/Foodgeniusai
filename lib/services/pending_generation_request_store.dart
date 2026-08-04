@@ -8,18 +8,36 @@ class PendingGenerationRequest {
   final String craving;
   final String? mealType;
   final String? dietary;
-  final int servings;
+  final int? servings;
   final String? portionSize;
   final List<String> ingredients;
+
+  /// Standard Generate Recipe preferences.
+  final String? mainGoal;
+  final List<String> dietaryPreferences;
+  final List<String> allergies;
+
+  /// Scan Fridge optional preferences (ingredients source only).
+  final String? cuisine;
+  final String? cookingTime;
+  final String? difficulty;
+  final List<String> originalDetectedIngredients;
 
   const PendingGenerationRequest({
     required this.source,
     this.craving = '',
     this.mealType,
     this.dietary,
-    this.servings = 2,
+    this.servings,
     this.portionSize,
     this.ingredients = const [],
+    this.mainGoal,
+    this.dietaryPreferences = const [],
+    this.allergies = const [],
+    this.cuisine,
+    this.cookingTime,
+    this.difficulty,
+    this.originalDetectedIngredients = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -30,20 +48,52 @@ class PendingGenerationRequest {
         'servings': servings,
         'portionSize': portionSize,
         'ingredients': ingredients,
+        'mainGoal': mainGoal,
+        'dietaryPreferences': dietaryPreferences,
+        'allergies': allergies,
+        'cuisine': cuisine,
+        'cookingTime': cookingTime,
+        'difficulty': difficulty,
+        'originalDetectedIngredients': originalDetectedIngredients,
       };
 
   factory PendingGenerationRequest.fromJson(Map<String, dynamic> json) {
+    final dietaryPrefs = (json['dietaryPreferences'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final legacyDietary = json['dietary'] as String?;
     return PendingGenerationRequest(
       source: json['source'] as String? ?? 'craving',
       craving: json['craving'] as String? ?? '',
       mealType: json['mealType'] as String?,
-      dietary: json['dietary'] as String?,
-      servings: json['servings'] as int? ?? 2,
+      dietary: legacyDietary,
+      servings: json['servings'] is int
+          ? json['servings'] as int
+          : int.tryParse('${json['servings'] ?? ''}'),
       portionSize: json['portionSize'] as String?,
       ingredients: (json['ingredients'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      mainGoal: json['mainGoal'] as String?,
+      dietaryPreferences: dietaryPrefs.isNotEmpty
+          ? dietaryPrefs
+          : (legacyDietary != null && legacyDietary.isNotEmpty
+              ? <String>[legacyDietary]
+              : const <String>[]),
+      allergies: (json['allergies'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      cuisine: json['cuisine'] as String?,
+      cookingTime: json['cookingTime'] as String?,
+      difficulty: json['difficulty'] as String?,
+      originalDetectedIngredients:
+          (json['originalDetectedIngredients'] as List<dynamic>?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              const [],
     );
   }
 }

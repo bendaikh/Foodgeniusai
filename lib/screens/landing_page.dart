@@ -528,6 +528,11 @@ class _LandingPageState extends State<LandingPage>
     );
   }
 
+  /// Longest card description; both cards reserve this text's height so the
+  /// Kitchen Treasures card matches the Generate Recipe card exactly.
+  static const _referenceDescription =
+      'AI-crafted recipes based on your specific cravings and dietary needs.';
+
   Widget _buildOptionCard(
     BuildContext context, {
     required IconData icon,
@@ -614,14 +619,34 @@ class _LandingPageState extends State<LandingPage>
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: isMobile ? 6 : 8),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: isMobile ? 12 : 14,
-                      color: AppTheme.greyText,
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
+                  LayoutBuilder(
+                    builder: (context, textConstraints) {
+                      final style = TextStyle(
+                        fontSize: isMobile ? 12 : 14,
+                        color: AppTheme.greyText,
+                        height: 1.4,
+                      );
+                      // Reserve the height of the longest description so both
+                      // cards end up exactly the same height.
+                      final painter = TextPainter(
+                        text: TextSpan(
+                          text: _referenceDescription,
+                          style: style,
+                        ),
+                        textDirection: TextDirection.ltr,
+                        textAlign: TextAlign.center,
+                        textScaler: MediaQuery.textScalerOf(context),
+                      )..layout(maxWidth: textConstraints.maxWidth);
+                      return ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: painter.height),
+                        child: Text(
+                          description,
+                          style: style,
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    },
                   ),
                   SizedBox(height: isMobile ? 14 : 16),
                   _PolishedActionButton(

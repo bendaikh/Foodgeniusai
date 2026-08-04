@@ -14,6 +14,8 @@ class ImagePickerHelper {
         maxWidth: 1920,
         maxHeight: 1080,
         imageQuality: 85,
+        // Avoid full photo-library authorization on iOS 14+ (PHPicker).
+        requestFullMetadata: false,
       );
     } catch (e) {
       if (kDebugMode) {
@@ -31,6 +33,7 @@ class ImagePickerHelper {
         maxWidth: 1920,
         maxHeight: 1080,
         imageQuality: 85,
+        requestFullMetadata: false,
       );
     } catch (e) {
       if (kDebugMode) {
@@ -79,6 +82,7 @@ class ImagePickerHelper {
         maxWidth: 1920,
         maxHeight: 1080,
         imageQuality: 85,
+        requestFullMetadata: false,
       );
       
       return images.map((image) => File(image.path)).toList();

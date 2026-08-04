@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +11,12 @@ class RevenueCatPackageIds {
   static const String basic = 'basic';
   static const String pro = 'pro';
   static const String premium = 'premium';
+
+  /// All valid paid tiers, ordered highest → lowest.
+  static const List<String> tiersByPriority = [premium, pro, basic];
+
+  static bool isValidTier(String? tier) =>
+      tier != null && tiersByPriority.contains(tier);
 }
 
 /// Named packages from the configured subscription offering.
@@ -221,6 +227,107 @@ class RevenueCatService {
     return active;
   }
 
+  /// Resolves the subscription tier (`basic` / `pro` / `premium`) from the
+  /// verified active products in [info].
+  ///
+  /// This is the single trusted product→tier mapping used by both the normal
+  /// purchase flow and Restore Purchases:
+  /// 1. Requires the paid entitlement ([premiumEntitlementId]) to be active.
+  /// 2. Collects the active subscription product identifiers plus the product
+  ///    backing the active entitlement.
+  /// 3. Maps each product to a tier via the `default` offering's
+  ///    basic/pro/premium packages (falling back to a product-id heuristic if
+  ///    offerings cannot be fetched).
+  /// 4. Returns the highest matched tier (premium > pro > basic), or `null`
+  ///    when no recognized product is active — callers must NOT unlock or
+  ///    default to any tier in that case.
+  Future<String?> resolveActiveTier([CustomerInfo? info]) async {
+    final resolved = info ?? await getCustomerInfo();
+    if (resolved == null) return null;
+
+    final entitlement = resolved.entitlements.active[premiumEntitlementId];
+    if (entitlement == null) {
+      debugPrint(
+        'RevenueCatService: resolveActiveTier — entitlement '
+        '"$premiumEntitlementId" not active',
+      );
+      return null;
+    }
+
+    final candidateProductIds = <String>{
+      ...resolved.activeSubscriptions,
+      if (entitlement.productIdentifier.isNotEmpty)
+        entitlement.productIdentifier,
+    };
+    if (candidateProductIds.isEmpty) {
+      debugPrint(
+        'RevenueCatService: resolveActiveTier — no active products found',
+      );
+      return null;
+    }
+
+    final productToTier = await _productToTierMap();
+    final matchedTiers = <String>{};
+    for (final productId in candidateProductIds) {
+      final tier =
+          productToTier[productId] ?? _tierFromProductIdentifier(productId);
+      if (tier != null) matchedTiers.add(tier);
+    }
+
+    for (final tier in RevenueCatPackageIds.tiersByPriority) {
+      if (matchedTiers.contains(tier)) {
+        debugPrint(
+          'RevenueCatService: resolveActiveTier — products='
+          '${candidateProductIds.join(', ')} → tier="$tier"',
+        );
+        return tier;
+      }
+    }
+
+    debugPrint(
+      'RevenueCatService: resolveActiveTier — no recognized tier for '
+      'products: ${candidateProductIds.join(', ')}',
+    );
+    return null;
+  }
+
+  /// Maps App Store product identifiers → tier using the configured
+  /// basic/pro/premium packages of the default offering.
+  Future<Map<String, String>> _productToTierMap() async {
+    try {
+      final packages = await getSubscriptionPackages();
+      return {
+        if (packages.basic != null)
+          packages.basic!.storeProduct.identifier: RevenueCatPackageIds.basic,
+        if (packages.pro != null)
+          packages.pro!.storeProduct.identifier: RevenueCatPackageIds.pro,
+        if (packages.premium != null)
+          packages.premium!.storeProduct.identifier:
+              RevenueCatPackageIds.premium,
+      };
+    } catch (e, stackTrace) {
+      _logError('_productToTierMap', e, stackTrace);
+      return const {};
+    }
+  }
+
+  /// Fallback when offerings are unavailable: infer the tier from the raw
+  /// product identifier. Checked in priority order; returns `null` when the
+  /// product does not clearly correspond to a known tier.
+  String? _tierFromProductIdentifier(String productIdentifier) {
+    final id = productIdentifier.toLowerCase();
+    if (id.contains(RevenueCatPackageIds.premium)) {
+      return RevenueCatPackageIds.premium;
+    }
+    if (id.contains(RevenueCatPackageIds.pro)) {
+      return RevenueCatPackageIds.pro;
+    }
+    if (id.contains(RevenueCatPackageIds.basic)) {
+      return RevenueCatPackageIds.basic;
+    }
+    return null;
+  }
+
   /// Purchases the `basic` package from the default offering.
   Future<RevenueCatPurchaseOutcome> purchaseBasic() async {
     return _purchaseNamedPackage(
@@ -312,11 +419,28 @@ class RevenueCatService {
     }
   }
 
-  /// Writes the existing Firestore subscription fields so
+  /// Syncs the active paid tier to the user's Firestore profile through the
+  /// trusted `syncRevenueCatSubscription` Cloud Function so
   /// [AuthService.hasPaidSubscription] reflects an active paid plan.
   ///
-  /// [tier] should be a non-`free` identifier (e.g. `basic`, `pro`, `premium`).
-  Future<bool> syncPaidSubscriptionToProfile({required String tier}) async {
+  /// Clients can no longer write `subscriptionTier` / `subscriptionStatus`
+  /// directly (blocked by Firestore rules); the backend performs the write.
+  ///
+  /// [tier] must be one of `basic`, `pro`, `premium`, already derived via
+  /// [resolveActiveTier]. [customerInfo] supplies the active product IDs the
+  /// backend uses to re-verify the mapping.
+  Future<bool> syncPaidSubscriptionToProfile({
+    required String tier,
+    CustomerInfo? customerInfo,
+    String? purchasedPackageId,
+  }) async {
+    if (!RevenueCatPackageIds.isValidTier(tier)) {
+      debugPrint(
+        'RevenueCatService: refusing to sync unrecognized tier "$tier"',
+      );
+      return false;
+    }
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null || user.isAnonymous) {
@@ -326,19 +450,59 @@ class RevenueCatService {
         return false;
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-        {
-          'subscriptionTier': tier,
-          'subscriptionStatus': 'active',
-          'subscriptionUpdatedAt': FieldValue.serverTimestamp(),
-          'subscriptionSource': 'revenue_cat',
-        },
-        SetOptions(merge: true),
-      );
+      // RevenueCat app user id lets the backend verify the subscription
+      // against the RevenueCat REST API when a secret key is configured.
+      String? appUserId;
+      try {
+        if (await Purchases.isConfigured) {
+          appUserId = await Purchases.appUserID;
+        }
+      } catch (_) {
+        appUserId = null;
+      }
+
+      final productIds = <String>{
+        if (customerInfo != null) ...customerInfo.activeSubscriptions,
+      };
+      final entitlement = customerInfo
+          ?.entitlements.active[premiumEntitlementId];
+      final entitlementProduct = entitlement?.productIdentifier;
+      if (entitlementProduct != null && entitlementProduct.isNotEmpty) {
+        productIds.add(entitlementProduct);
+      }
+      // Package ids (`basic` / `pro` / `premium`) also map on the backend —
+      // include the just-purchased package so a momentary empty product list
+      // cannot block a legitimate purchase sync. Restore must NOT use this.
+      if (RevenueCatPackageIds.isValidTier(purchasedPackageId)) {
+        productIds.add(purchasedPackageId!);
+      }
+
+      // Latest purchase date anchors the billing-period quota window server-side.
+      int? billingPeriodStartMs;
+      final latestPurchase = entitlement?.latestPurchaseDate;
+      if (latestPurchase != null && latestPurchase.isNotEmpty) {
+        billingPeriodStartMs = DateTime.tryParse(latestPurchase)
+            ?.millisecondsSinceEpoch;
+      }
+
+      final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('syncRevenueCatSubscription')
+          .call<dynamic>({
+        'tier': tier,
+        if (appUserId != null) 'appUserId': appUserId,
+        'productIds': productIds.toList(),
+        if (billingPeriodStartMs != null)
+          'billingPeriodStartMs': billingPeriodStartMs,
+      });
+
+      final data = result.data;
+      final success = data is Map && data['success'] == true;
+      final syncedTier = data is Map ? data['tier'] : null;
       debugPrint(
-        'RevenueCatService: synced subscriptionTier="$tier" for ${user.uid}',
+        'RevenueCatService: backend sync requested="$tier" '
+        'synced="$syncedTier" success=$success for ${user.uid}',
       );
-      return true;
+      return success;
     } catch (e, stackTrace) {
       _logError('syncPaidSubscriptionToProfile', e, stackTrace);
       return false;

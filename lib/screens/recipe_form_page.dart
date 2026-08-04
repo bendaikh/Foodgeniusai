@@ -103,7 +103,7 @@ class _RecipeFormPageState extends State<RecipeFormPage>
     _selectedMealType = pending.mealType;
     _selectedDietary = pending.dietary;
     _selectedPortion = pending.portionSize;
-    _servingsController.text = pending.servings.toString();
+    _servingsController.text = (pending.servings ?? 2).toString();
 
     await PendingGenerationRequestStore.instance.clear();
     if (!mounted) return;
@@ -218,12 +218,28 @@ class _RecipeFormPageState extends State<RecipeFormPage>
 
       final openaiService = OpenAIService(settings);
 
+      // Map original form fields onto the current OpenAIService signature
+      // (required for compile only — UI remains the historical HEAD design).
+      final selectedMeal = _selectedMealType;
+      final mealTypeForApi =
+          (selectedMeal != null && selectedMeal.trim().isNotEmpty)
+              ? selectedMeal.trim()
+              : 'Surprise Me';
+      final dietaryForApi = (_selectedDietary != null &&
+              _selectedDietary!.trim().isNotEmpty)
+          ? <String>[_selectedDietary!.trim()]
+          : <String>['None'];
+      final cravingForApi = _selectedPortion == null
+          ? _cravingController.text.trim()
+          : '${_cravingController.text.trim()} (portion: $_selectedPortion)';
+
       final recipe = await openaiService.generateRecipe(
-        craving: _cravingController.text.trim(),
-        mealType: _selectedMealType,
-        dietary: _selectedDietary,
+        craving: cravingForApi,
+        mealType: mealTypeForApi,
+        mainGoal: 'Just Enjoy',
+        dietaryPreferences: dietaryForApi,
+        allergies: const ['No Allergies'],
         servings: int.tryParse(_servingsController.text) ?? 2,
-        portionSize: _selectedPortion,
       );
 
       String? imageUrl;

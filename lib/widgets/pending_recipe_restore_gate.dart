@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../services/pending_image_completion_service.dart';
 import '../services/pending_recipe_service.dart';
 import '../services/recipe_generation_service.dart';
 import '../utils/recipe_navigation.dart';
 import '../screens/main_shell_page.dart';
 
 /// Restores a guest-generated recipe after the user returns from mobile checkout.
+/// Also resumes pending recipe-image completion after background / lock.
 class PendingRecipeRestoreGate extends StatefulWidget {
   final Widget child;
 
@@ -20,7 +22,8 @@ class PendingRecipeRestoreGate extends StatefulWidget {
 
 class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
     with WidgetsBindingObserver {
-  final RecipeGenerationService _recipeGenerationService = RecipeGenerationService();
+  final RecipeGenerationService _recipeGenerationService =
+      RecipeGenerationService();
   bool _isChecking = false;
   bool _hasRestored = false;
 
@@ -29,6 +32,7 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tryRestorePendingRecipe();
+    _resumePendingImage();
   }
 
   @override
@@ -39,9 +43,18 @@ class _PendingRecipeRestoreGateState extends State<PendingRecipeRestoreGate>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && !_hasRestored) {
-      _tryRestorePendingRecipe();
+    if (state == AppLifecycleState.resumed) {
+      if (!_hasRestored) {
+        _tryRestorePendingRecipe();
+      }
+      _resumePendingImage();
     }
+  }
+
+  Future<void> _resumePendingImage() async {
+    try {
+      await PendingImageCompletionService.instance.resumePendingIfNeeded();
+    } catch (_) {}
   }
 
   Future<void> _tryRestorePendingRecipe() async {

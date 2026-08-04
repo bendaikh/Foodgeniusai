@@ -1,16 +1,19 @@
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:ui';
 import '../theme/app_theme.dart';
 import '../widgets/web_image.dart';
 import '../models/recipe_model.dart';
-import '../utils/url_launcher_helper.dart' as url_helper;
 import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
+import '../services/pending_image_completion_service.dart';
 import '../services/pending_recipe_service.dart';
+import '../services/recipe_deletion_service.dart';
 import '../services/recipe_generation_service.dart';
+import '../utils/app_message_dialog.dart';
 import '../utils/recipe_navigation.dart';
 import 'pricing_page.dart';
-import 'user_auth_page.dart';
 import '../services/voice_guide_service.dart';
 import '../widgets/voice_guide_route_aware.dart';
 import '../widgets/premium_audio_button.dart';
@@ -37,6 +40,13 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   final AuthService _authService = AuthService();
   final RecipeGenerationService _recipeGenerationService =
       RecipeGenerationService();
+  final FirestoreService _firestoreService = FirestoreService();
+
+  late RecipeModel _recipe;
+  bool _isTogglingSave = false;
+  bool _isRetryingImage = false;
+  bool _isDeleting = false;
+  StreamSubscription<RecipeModel?>? _recipeSub;
 
   @override
   VoiceGuideScreen get voiceGuideScreen => VoiceGuideScreen.generatedRecipe;
@@ -44,19 +54,178 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   @override
   void initState() {
     super.initState();
+    _recipe = widget.recipe;
     _checkedIngredients = {
-      for (var i = 0; i < widget.recipe.ingredients.length; i++) i: false,
+      for (var i = 0; i < _recipe.ingredients.length; i++) i: false,
     };
     _checkedInstructions = {
-      for (var i = 0; i < widget.recipe.instructions.length; i++) i: false,
+      for (var i = 0; i < _recipe.instructions.length; i++) i: false,
     };
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        await _recipeGenerationService.ensureInMyRecipes(widget.recipe);
+        final ensured =
+            await _recipeGenerationService.ensureInMyRecipes(_recipe);
+        if (mounted && ensured.id != null) {
+          setState(() => _recipe = ensured);
+          _watchRecipe(ensured.id!);
+        }
       } catch (error, stackTrace) {
         debugPrint('Recipe auto-save failed: $error\n$stackTrace');
       }
+      await _resumeImageIfNeeded();
     });
+  }
+
+  void _watchRecipe(String recipeId) {
+    _recipeSub?.cancel();
+    _recipeSub = _firestoreService.watchRecipe(recipeId).listen((updated) {
+      if (!mounted) return;
+      if (updated == null) {
+        // Recipe was deleted (this device or another). Leave detail safely.
+        RecipeNavigation.goBackFromRecipeDetail(context);
+        return;
+      }
+      setState(() => _recipe = updated);
+    });
+  }
+
+  Future<void> _resumeImageIfNeeded() async {
+    final hasImage =
+        _recipe.imageUrl != null && _recipe.imageUrl!.isNotEmpty;
+    if (hasImage) return;
+
+    final pending = await PendingImageCompletionService.instance.loadPending();
+    if (pending == null) return;
+    if (!PendingImageCompletionService.instance
+        .matchesRecipe(pending, _recipe)) {
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isRetryingImage = true);
+    try {
+      final url =
+          await PendingImageCompletionService.instance.resumePendingIfNeeded();
+      if (!mounted) return;
+      if (url != null && url.isNotEmpty) {
+        setState(() => _recipe = _recipe.copyWith(imageUrl: url));
+      }
+    } finally {
+      if (mounted) setState(() => _isRetryingImage = false);
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    final user = _authService.currentUser;
+    if (user == null || user.isAnonymous) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sign in to save recipes to your Saved tab.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final recipeId = _recipe.id;
+    if (recipeId == null || recipeId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Save this recipe to My Recipes first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_isTogglingSave || _isDeleting) return;
+    setState(() => _isTogglingSave = true);
+
+    final next = !_recipe.isSaved;
+    try {
+      await _firestoreService.setRecipeSaved(recipeId, next);
+      if (!mounted) return;
+      setState(() => _recipe = _recipe.copyWith(isSaved: next));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(next ? 'Saved to your Saved tab' : 'Removed from Saved'),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not update Saved: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isTogglingSave = false);
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final user = _authService.currentUser;
+    if (user == null || user.isAnonymous) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sign in to delete recipes.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_recipe.id == null || _recipe.id!.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This recipe cannot be deleted yet.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_isDeleting) return;
+
+    final confirmed = await AppMessageDialog.confirmDestructive(
+      context: context,
+      title: 'Delete this recipe?',
+      message:
+          'This recipe will be permanently removed from your account.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await RecipeDeletionService.instance.deleteOwnedRecipe(_recipe);
+      if (!mounted) return;
+      // Success only after persistence confirmed gone — then leave this screen.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recipe deleted'),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      RecipeNavigation.goBackFromRecipeDetail(context);
+    } catch (e) {
+      if (!mounted) return;
+      await AppMessageDialog.showError(
+        context: context,
+        title: 'Could not delete',
+        message: AppMessageDialog.cleanErrorMessage(e),
+      );
+      if (mounted) setState(() => _isDeleting = false);
+    }
   }
 
   @override
@@ -67,6 +236,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
 
   @override
   void dispose() {
+    _recipeSub?.cancel();
     disposeVoiceGuide();
     super.dispose();
   }
@@ -74,109 +244,6 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   bool _isAuthenticated = false;
   bool _hasFullAccess = false;
   bool _isUnlocking = false;
-
-  void _shareOnPinterest(BuildContext context) async {
-    try {
-      // Check if image URL exists
-      if (widget.recipe.imageUrl == null || widget.recipe.imageUrl!.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No image available to share'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Pinterest share URL format
-      final imageUrl = Uri.encodeComponent(widget.recipe.imageUrl!);
-      final description = Uri.encodeComponent(
-        '${widget.recipe.title} - Delicious recipe created with FoodGeniusAI',
-      );
-
-      // Construct Pinterest share URL
-      final pinterestUrl =
-          'https://www.pinterest.com/pin/create/button/'
-          '?url=${Uri.encodeComponent('https://foodgeniusai.com')}'
-          '&media=$imageUrl'
-          '&description=$description';
-
-      // Use platform-specific URL launcher
-      await url_helper.openUrl(pinterestUrl);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Opening Pinterest...'),
-            backgroundColor: AppTheme.primaryGreen,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sharing to Pinterest: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  void _shareOnFacebook(BuildContext context) async {
-    try {
-      // Check if image URL exists
-      if (widget.recipe.imageUrl == null || widget.recipe.imageUrl!.isEmpty) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No image available to share'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Facebook share URL format
-      final shareUrl = Uri.encodeComponent('https://foodgeniusai.com');
-      final quote = Uri.encodeComponent(
-        '${widget.recipe.title} - Delicious recipe created with FoodGeniusAI',
-      );
-
-      // Construct Facebook share URL
-      final facebookUrl =
-          'https://www.facebook.com/sharer/sharer.php'
-          '?u=$shareUrl'
-          '&quote=$quote';
-
-      // Use platform-specific URL launcher
-      await url_helper.openUrl(facebookUrl);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Opening Facebook...'),
-            backgroundColor: AppTheme.primaryGreen,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error sharing to Facebook: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -273,11 +340,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
             ),
           ),
           child:
-              widget.recipe.imageUrl != null &&
-                      widget.recipe.imageUrl!.isNotEmpty
+              _recipe.imageUrl != null && _recipe.imageUrl!.isNotEmpty
                   ? kIsWeb
                       ? WebImage(
-                        imageUrl: widget.recipe.imageUrl!,
+                        imageUrl: _recipe.imageUrl!,
                         height: 400,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -292,7 +358,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
                         },
                       )
                       : Image.network(
-                        widget.recipe.imageUrl!,
+                        _recipe.imageUrl!,
                         height: 400,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -306,12 +372,34 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
                           );
                         },
                       )
-                  : const Center(
-                    child: Icon(
-                      Icons.restaurant,
-                      size: 120,
-                      color: AppTheme.primaryGreen,
-                    ),
+                  : Center(
+                    child: _isRetryingImage
+                        ? const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  color: AppTheme.primaryGreen,
+                                ),
+                              ),
+                              SizedBox(height: 14),
+                              Text(
+                                'Finishing recipe image…',
+                                style: TextStyle(
+                                  color: AppTheme.greyText,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Icon(
+                            Icons.restaurant,
+                            size: 120,
+                            color: AppTheme.primaryGreen,
+                          ),
                   ),
         ),
         Positioned(
@@ -333,72 +421,62 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
           right: 16,
           child: Row(
             children: [
-              const PremiumAudioButton(size: 40, iconSize: 20),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _shareOnFacebook(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.darkBackground.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.redAccent.withValues(alpha: 0.45),
                   ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1877F2), // Facebook blue color
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.facebook, color: Colors.white, size: 18),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Share',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                ),
+                child: IconButton(
+                  tooltip: 'Delete recipe',
+                  onPressed: (_isDeleting || _isTogglingSave)
+                      ? null
+                      : _confirmAndDelete,
+                  icon: _isDeleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.redAccent,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.delete_outline_rounded,
+                          color: Colors.redAccent,
                         ),
-                      ),
-                    ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppTheme.darkBackground.withValues(alpha: 0.8),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _recipe.isSaved
+                        ? AppTheme.primaryGreen
+                        : Colors.white.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: IconButton(
+                  tooltip: _recipe.isSaved ? 'Unsave recipe' : 'Save recipe',
+                  onPressed: (_isTogglingSave || _isDeleting)
+                      ? null
+                      : _toggleSave,
+                  icon: Icon(
+                    _recipe.isSaved
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_border_rounded,
+                    color: _recipe.isSaved
+                        ? AppTheme.primaryGreen
+                        : Colors.white,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => _shareOnPinterest(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE60023), // Pinterest red color
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Text(
-                    'Pin',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
+              const PremiumAudioButton(size: 40, iconSize: 20),
             ],
           ),
         ),
@@ -410,7 +488,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                widget.recipe.title,
+                _recipe.title,
                 style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -432,11 +510,11 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   }
 
   Widget _buildRecipePreviewMeta() {
-    final calories = '${widget.recipe.nutrition['calories'] ?? 450}';
+    final calories = '${_recipe.nutrition['calories'] ?? 450}';
     final difficulty =
-        widget.recipe.difficulty.isNotEmpty
-            ? widget.recipe.difficulty[0].toUpperCase() +
-                widget.recipe.difficulty.substring(1)
+        _recipe.difficulty.isNotEmpty
+            ? _recipe.difficulty[0].toUpperCase() +
+                _recipe.difficulty.substring(1)
             : 'Intermediate';
 
     return Padding(
@@ -444,9 +522,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.recipe.description.isNotEmpty) ...[
+          if (_recipe.description.isNotEmpty) ...[
             Text(
-              widget.recipe.description,
+              _recipe.description,
               style: const TextStyle(
                 fontSize: 16,
                 color: AppTheme.greyText,
@@ -461,17 +539,17 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
               _buildTimeInfo(
                 Icons.access_time,
                 'Prep',
-                '${widget.recipe.prepTime} min',
+                '${_recipe.prepTime} min',
               ),
               _buildTimeInfo(
                 Icons.restaurant,
                 'Cook',
-                '${widget.recipe.cookTime} min',
+                '${_recipe.cookTime} min',
               ),
               _buildTimeInfo(
                 Icons.calendar_today,
                 'Total',
-                '${widget.recipe.totalTime} min',
+                '${_recipe.totalTime} min',
               ),
             ],
           ),
@@ -503,7 +581,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   }
 
   Widget _buildNutrition() {
-    final calories = '${widget.recipe.nutrition['calories'] ?? 450}';
+    final calories = '${_recipe.nutrition['calories'] ?? 450}';
 
     if (_hasFullAccess) {
       return Padding(
@@ -517,19 +595,19 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
                 const SizedBox(width: 12),
                 _buildNutritionCard(
                   'Protein',
-                  '${widget.recipe.nutrition['protein'] ?? 40}g',
+                  '${_recipe.nutrition['protein'] ?? 40}g',
                   'grams',
                 ),
                 const SizedBox(width: 12),
                 _buildNutritionCard(
                   'Carbs',
-                  '${widget.recipe.nutrition['carbs'] ?? 70}g',
+                  '${_recipe.nutrition['carbs'] ?? 70}g',
                   'grams',
                 ),
                 const SizedBox(width: 12),
                 _buildNutritionCard(
                   'Fats',
-                  '${widget.recipe.nutrition['fat'] ?? 25}g',
+                  '${_recipe.nutrition['fat'] ?? 25}g',
                   'grams',
                 ),
               ],
@@ -588,19 +666,19 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
                     children: [
                       _buildNutritionCard(
                         'Protein',
-                        '${widget.recipe.nutrition['protein'] ?? 40}g',
+                        '${_recipe.nutrition['protein'] ?? 40}g',
                         'grams',
                       ),
                       const SizedBox(width: 12),
                       _buildNutritionCard(
                         'Carbs',
-                        '${widget.recipe.nutrition['carbs'] ?? 70}g',
+                        '${_recipe.nutrition['carbs'] ?? 70}g',
                         'grams',
                       ),
                       const SizedBox(width: 12),
                       _buildNutritionCard(
                         'Fats',
-                        '${widget.recipe.nutrition['fat'] ?? 25}g',
+                        '${_recipe.nutrition['fat'] ?? 25}g',
                         'grams',
                       ),
                     ],
@@ -848,7 +926,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   }
 
   Widget _buildIngredients() {
-    final ingredients = widget.recipe.ingredients;
+    final ingredients = _recipe.ingredients;
     final previewCount =
         _hasFullAccess ? ingredients.length : ingredients.length.clamp(0, 3);
     final lockedIngredients =
@@ -992,7 +1070,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   }
 
   Widget _buildInstructions() {
-    final instructions = widget.recipe.instructions;
+    final instructions = _recipe.instructions;
     final previewCount =
         _hasFullAccess ? instructions.length : (instructions.isEmpty ? 0 : 1);
     final lockedInstructions =
@@ -1192,7 +1270,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
   }
 
   Future<void> _savePendingRecipe() async {
-    await PendingRecipeService.instance.save(widget.recipe);
+    await PendingRecipeService.instance.save(_recipe);
   }
 
   Future<void> _handleUnlockFullRecipe() async {
@@ -1203,27 +1281,15 @@ class _RecipeDetailPageState extends State<RecipeDetailPage>
       await _savePendingRecipe();
       if (!mounted) return;
 
-      if (_isAuthenticated) {
-        if (!mounted) return;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PricingPage(returnRecipe: widget.recipe),
-          ),
-        );
-      } else {
-        if (!mounted) return;
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder:
-                (context) => UserAuthPage(
-                  isLogin: false,
-                  continueToPricingRecipe: widget.recipe,
-                ),
-          ),
-        );
-      }
+      // Always open pricing first. If the user is not signed in, PricingPage
+      // prompts for auth after they select a plan, then continues that same
+      // Basic / Pro / Premium purchase without asking them to re-select.
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PricingPage(returnRecipe: _recipe),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isUnlocking = false);

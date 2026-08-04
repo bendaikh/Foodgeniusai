@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/dev_flags.dart';
 import '../exceptions/free_recipe_limit_exception.dart';
 import '../exceptions/generation_limit_exception.dart';
 import 'auth_service.dart';
@@ -30,6 +31,11 @@ class RecipeAccessService {
   String _accountKey(String uid) => 'foodgeniusai_free_recipe_used_v1_$uid';
 
   Future<RecipeAccessDecision> decide({String source = 'unknown'}) async {
+    if (kTestSubscriptionBypass) {
+      _log('source=$source, TEST SUBSCRIPTION BYPASS ACTIVE, decision=allowSubscription');
+      return RecipeAccessDecision.allowSubscription;
+    }
+
     final subscribed = await hasPaidSubscription();
     final successfulRecipes = await _successfulRecipeCountHint();
     final freeUsed = await hasUsedFreeRecipe();
@@ -37,18 +43,20 @@ class RecipeAccessService {
     RecipeAccessDecision decision;
     if (subscribed) {
       final status = await _generationLimitService.getStatus();
-      if (status.remaining <= 0) {
+      if (!status.hasRemaining) {
         decision = RecipeAccessDecision.showPaywall;
         _log(
           'source=$source, successfulRecipes=$successfulRecipes, '
-          'subscribed=true, remaining=${status.remaining}, decision=showPaywall',
+          'subscribed=true, unlimited=${status.unlimited}, '
+          'remaining=${status.remaining}, decision=showPaywall',
         );
         return decision;
       }
       decision = RecipeAccessDecision.allowSubscription;
       _log(
         'source=$source, successfulRecipes=$successfulRecipes, '
-        'subscribed=true, remaining=${status.remaining}, decision=allowSubscription',
+        'subscribed=true, unlimited=${status.unlimited}, '
+        'remaining=${status.remaining}, decision=allowSubscription',
       );
       return decision;
     }
@@ -82,9 +90,14 @@ class RecipeAccessService {
 
   /// Throws [FreeRecipeLimitException] or [GenerationLimitException] when blocked.
   Future<void> assertCanGenerate({String source = 'unknown'}) async {
+    if (kTestSubscriptionBypass) {
+      _log('source=$source, TEST SUBSCRIPTION BYPASS ACTIVE, decision=allowSubscription');
+      return;
+    }
+
     if (await hasPaidSubscription()) {
       final status = await _generationLimitService.getStatus();
-      if (status.remaining <= 0) {
+      if (!status.hasRemaining) {
         _log(
           'source=$source, subscribed=true, remaining=0, decision=showPaywall',
         );
@@ -94,8 +107,8 @@ class RecipeAccessService {
         );
       }
       _log(
-        'source=$source, subscribed=true, remaining=${status.remaining}, '
-        'decision=allowSubscription',
+        'source=$source, subscribed=true, unlimited=${status.unlimited}, '
+        'remaining=${status.remaining}, decision=allowSubscription',
       );
       return;
     }
@@ -112,7 +125,150 @@ class RecipeAccessService {
     );
   }
 
+  /// Paid subscribers with a Fridge Scan cap must have remaining scans.
+  /// Free / guest users are not blocked here (existing free-recipe flow unchanged).
+  Future<void> assertCanFridgeScan({String source = 'unknown'}) async {
+    if (kTestSubscriptionBypass) {
+      _logFridgeScan(
+        source: source,
+        activePlan: 'bypass',
+        scanLimit: 'unlimited',
+        scansUsed: 0,
+        scansRemaining: null,
+        allowed: true,
+        note: 'TEST SUBSCRIPTION BYPASS ACTIVE',
+      );
+      return;
+    }
+
+    if (!await hasPaidSubscription()) {
+      _logFridgeScan(
+        source: source,
+        activePlan: 'free',
+        scanLimit: 0,
+        scansUsed: 0,
+        scansRemaining: 0,
+        allowed: true,
+        note: 'skipQuotaCheck subscribed=false',
+      );
+      return;
+    }
+
+    final profile = await _authService.fetchUserProfile();
+    final activePlan =
+        (profile?['subscriptionTier'] as String?)?.trim().isNotEmpty == true
+            ? profile!['subscriptionTier'] as String
+            : 'unknown';
+
+    final status = await _generationLimitService.getFridgeScanStatus();
+    final scanLimit = status.unlimited ? 'unlimited' : status.limit;
+    final remaining = status.unlimited ? null : (status.remaining ?? 0);
+    final allowed = status.hasRemaining;
+
+    _logFridgeScan(
+      source: source,
+      activePlan: status.tier.isNotEmpty ? status.tier : activePlan,
+      scanLimit: scanLimit,
+      scansUsed: status.used,
+      scansRemaining: remaining,
+      allowed: allowed,
+    );
+
+    if (!allowed) {
+      throw FridgeScanLimitException(
+        'You\'ve used all ${status.limit} Fridge Scans for this billing period. '
+        'Upgrade your plan for more scans.',
+      );
+    }
+  }
+
+  /// Consumes 1 Fridge Scan after a successful ingredient detection.
+  /// No-op for free users. Unlimited plans still record usage server-side.
+  Future<void> recordSuccessfulFridgeScan({
+    String source = 'unknown',
+    required bool scanSucceeded,
+  }) async {
+    if (!scanSucceeded) {
+      _log(
+        'source=$source, fridgeScanConsumed=false, scanFailed=true',
+      );
+      return;
+    }
+
+    if (kTestSubscriptionBypass) {
+      _logFridgeScan(
+        source: source,
+        activePlan: 'bypass',
+        scanLimit: 'unlimited',
+        scansUsed: 0,
+        scansRemaining: null,
+        allowed: true,
+        note: 'consume skipped — TEST SUBSCRIPTION BYPASS ACTIVE',
+      );
+      return;
+    }
+
+    if (!await hasPaidSubscription()) {
+      _logFridgeScan(
+        source: source,
+        activePlan: 'free',
+        scanLimit: 0,
+        scansUsed: 0,
+        scansRemaining: 0,
+        allowed: true,
+        note: 'consume skipped — subscribed=false',
+      );
+      return;
+    }
+
+    try {
+      final status = await _generationLimitService.consumeFridgeScan();
+      _logFridgeScan(
+        source: source,
+        activePlan: status.tier,
+        scanLimit: status.unlimited ? 'unlimited' : status.limit,
+        scansUsed: status.used,
+        scansRemaining: status.unlimited ? null : status.remaining,
+        allowed: true,
+        note: 'fridgeScanConsumed=true',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[RecipeAccess] Fridge Scan consume failed: $error\n$stackTrace',
+      );
+      if (error is FridgeScanLimitException) rethrow;
+      final message = error
+          .toString()
+          .replaceFirst('Exception: ', '')
+          .replaceFirst('FridgeScanLimitException: ', '');
+      if (message.contains('Fridge Scan') || message.contains('used all')) {
+        throw FridgeScanLimitException(message);
+      }
+      rethrow;
+    }
+  }
+
+  void _logFridgeScan({
+    required String source,
+    required String activePlan,
+    required Object? scanLimit,
+    required int scansUsed,
+    required int? scansRemaining,
+    required bool allowed,
+    String? note,
+  }) {
+    final remainingLabel =
+        scansRemaining == null ? 'unlimited' : '$scansRemaining';
+    _log(
+      'fridgeScan source=$source activePlan=$activePlan '
+      'scanLimit=$scanLimit scansUsed=$scansUsed '
+      'scansRemaining=$remainingLabel allowed=$allowed'
+      '${note != null ? ' note=$note' : ''}',
+    );
+  }
+
   Future<bool> hasPaidSubscription() async {
+    if (kTestSubscriptionBypass) return true;
     final profile = await _authService.fetchUserProfile();
     return _authService.hasPaidSubscription(profile);
   }
@@ -124,6 +280,13 @@ class RecipeAccessService {
   }) async {
     if (!generationSucceeded) {
       _log('generationFailed=true, freeRecipeConsumed=false, source=$source');
+      return;
+    }
+
+    if (kTestSubscriptionBypass) {
+      _log(
+        'source=$source, paidCreditConsumed=false, TEST SUBSCRIPTION BYPASS ACTIVE',
+      );
       return;
     }
 
@@ -203,6 +366,7 @@ class RecipeAccessService {
       await _firestore.collection('users').doc(user.uid).set(
         {
           'freeRecipeUsed': true,
+          'totalRecipesGenerated': FieldValue.increment(1),
         },
         SetOptions(merge: true),
       );
@@ -233,6 +397,7 @@ class RecipeAccessService {
             // Does not touch subscriptionPlanId / Stripe fields.
             'totalRecipesGenerated': 0,
             'monthlyGenerationsUsed': 0,
+            'monthlyFridgeScansUsed': 0,
           },
           SetOptions(merge: true),
         );

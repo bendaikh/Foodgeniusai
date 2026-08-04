@@ -118,6 +118,27 @@ class FirestoreService {
     await _firestore.collection('recipes').doc(recipeId).update(data);
   }
 
+  Future<RecipeModel?> getRecipeById(String recipeId) async {
+    final doc = await _firestore.collection('recipes').doc(recipeId).get();
+    if (!doc.exists) return null;
+    return RecipeModel.fromFirestore(doc);
+  }
+
+  Stream<RecipeModel?> watchRecipe(String recipeId) {
+    return _firestore.collection('recipes').doc(recipeId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return RecipeModel.fromFirestore(doc);
+    });
+  }
+
+  /// Explicit user bookmark — does not affect generation history / quota.
+  Future<void> setRecipeSaved(String recipeId, bool isSaved) async {
+    await _firestore.collection('recipes').doc(recipeId).update({
+      'isSaved': isSaved,
+      if (isSaved) 'savedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // Delete recipe
   Future<void> deleteRecipe(String recipeId) async {
     await _firestore.collection('recipes').doc(recipeId).delete();

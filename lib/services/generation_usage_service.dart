@@ -1,6 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Tracks recipe generation usage on the user profile (idempotent per recipe).
+/// Marks a recipe as having been counted once.
+///
+/// Paid monthly quotas are owned exclusively by Cloud Functions
+/// (`consumeRecipeGeneration`). This helper must not mutate
+/// `monthlyGenerationsUsed`.
 class GenerationUsageService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -15,11 +19,6 @@ class GenerationUsageService {
     if (recipeSnap.data()?['generationCounted'] == true) {
       return false;
     }
-
-    await _firestore.collection('users').doc(userId).set({
-      'monthlyGenerationsUsed': FieldValue.increment(1),
-      'totalRecipesGenerated': FieldValue.increment(1),
-    }, SetOptions(merge: true));
 
     await recipeRef.set(
       {'generationCounted': true},

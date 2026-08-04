@@ -5,12 +5,15 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/audio_settings_service.dart';
 import '../services/firestore_service.dart';
+import '../services/generation_limit_service.dart';
 import '../services/recipe_access_service.dart';
+import '../services/recipe_deletion_service.dart';
 import '../models/user_model.dart';
 import '../models/recipe_model.dart';
 import '../widgets/my_recipes_feed.dart';
 import '../widgets/premium_audio_button.dart';
 import '../widgets/web_image.dart';
+import '../utils/app_message_dialog.dart';
 import 'recipe_detail_page.dart';
 import 'recipe_form_page.dart';
 import 'main_shell_page.dart';
@@ -661,6 +664,10 @@ class _UserAccountPageState extends State<UserAccountPage> {
             userData?.subscriptionTier ?? 'free',
             isMobile,
           ),
+          if (_authService.hasPaidSubscription(userData?.toMap())) ...[
+            Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
+            _buildMonthlyUsageRows(isMobile),
+          ],
           Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
           _buildInfoRow(
             'Member Since',
@@ -718,6 +725,39 @@ class _UserAccountPageState extends State<UserAccountPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMonthlyUsageRows(bool isMobile) {
+    final service = GenerationLimitService();
+    return FutureBuilder<List<QuotaStatus>>(
+      future: Future.wait([
+        service.getStatus(),
+        service.getFridgeScanStatus(),
+      ]),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return _buildInfoRow('Monthly usage', 'Loading…', isMobile);
+        }
+
+        final recipe = snapshot.data![0];
+        final scans = snapshot.data![1];
+        final recipeLabel = recipe.unlimited
+            ? 'Unlimited'
+            : '${recipe.remaining ?? 0} left of ${recipe.limit ?? 0}';
+        final scanLabel = scans.unlimited
+            ? 'Unlimited'
+            : '${scans.remaining ?? 0} left of ${scans.limit ?? 0}';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildInfoRow('Recipe generations', recipeLabel, isMobile),
+            Divider(color: AppTheme.greyText, height: isMobile ? 24 : 32),
+            _buildInfoRow('Fridge Scans', scanLabel, isMobile),
+          ],
+        );
+      },
     );
   }
 
@@ -948,6 +988,38 @@ class _UserAccountPageState extends State<UserAccountPage> {
     );
   }
 
+  Future<void> _confirmAndDeleteRecipe(RecipeModel recipe) async {
+    final confirmed = await AppMessageDialog.confirmDestructive(
+      context: context,
+      title: 'Delete this recipe?',
+      message:
+          'This recipe will be permanently removed from your account.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+
+    try {
+      await RecipeDeletionService.instance.deleteOwnedRecipe(recipe);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recipe deleted'),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      _myRecipesKey.currentState?.reload();
+    } catch (e) {
+      if (!mounted) return;
+      await AppMessageDialog.showError(
+        context: context,
+        title: 'Could not delete',
+        message: AppMessageDialog.cleanErrorMessage(e),
+      );
+    }
+  }
+
   Widget _buildRecipeCard(RecipeModel recipe) {
     return GestureDetector(
       onTap: () {
@@ -971,7 +1043,8 @@ class _UserAccountPageState extends State<UserAccountPage> {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
               ),
-              child:
+              child: Stack(
+                children: [
                   recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty
                       ? kIsWeb
                           ? WebImage(
@@ -1005,6 +1078,49 @@ class _UserAccountPageState extends State<UserAccountPage> {
                             },
                           )
                       : _buildPlaceholderImage(150),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: AppTheme.darkBackground.withValues(alpha: 0.75),
+                      shape: const CircleBorder(),
+                      child: PopupMenuButton<String>(
+                        tooltip: 'Recipe options',
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        color: AppTheme.cardBackground,
+                        onSelected: (value) async {
+                          if (value == 'delete') {
+                            await _confirmAndDeleteRecipe(recipe);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Delete',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(16),

@@ -6,6 +6,9 @@ import '../models/recipe_model.dart';
 import '../widgets/my_recipes_feed.dart';
 import '../widgets/premium_audio_button.dart';
 import '../widgets/web_image.dart';
+import '../services/firestore_service.dart';
+import '../services/recipe_deletion_service.dart';
+import '../utils/app_message_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class MyCreationsPage extends StatelessWidget {
@@ -18,6 +21,60 @@ class MyCreationsPage extends StatelessWidget {
     this.bottomContentInset = 0,
   });
 
+  Future<void> _unsave(BuildContext context, RecipeModel recipe) async {
+    final id = recipe.id;
+    if (id == null || id.isEmpty) return;
+    try {
+      await FirestoreService().setRecipeSaved(id, false);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Removed from Saved'),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not unsave: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmAndDelete(BuildContext context, RecipeModel recipe) async {
+    final confirmed = await AppMessageDialog.confirmDestructive(
+      context: context,
+      title: 'Delete this recipe?',
+      message:
+          'This recipe will be permanently removed from your account.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Delete',
+    );
+    if (!confirmed || !context.mounted) return;
+
+    try {
+      await RecipeDeletionService.instance.deleteOwnedRecipe(recipe);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recipe deleted'),
+          backgroundColor: AppTheme.primaryGreen,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      await AppMessageDialog.showError(
+        context: context,
+        title: 'Could not delete',
+        message: AppMessageDialog.cleanErrorMessage(e),
+      );
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -53,7 +110,7 @@ class MyCreationsPage extends StatelessWidget {
                 else
                   const SizedBox(height: 12),
                 const Text(
-                  'My Creations',
+                  'Saved',
                   style: TextStyle(
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
@@ -62,7 +119,7 @@ class MyCreationsPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'A collection of your AI-crafted masterpieces',
+                  'Recipes you bookmarked for later',
                   style: TextStyle(fontSize: 16, color: AppTheme.greyText),
                 ),
                 const SizedBox(height: 40),
@@ -70,6 +127,10 @@ class MyCreationsPage extends StatelessWidget {
                   MyRecipesFeed(
                     userId: currentUser.uid,
                     nestedInScrollView: true,
+                    savedOnly: true,
+                    emptyTitle: 'No Saved Recipes',
+                    emptyMessage:
+                        'Tap the bookmark on a recipe to save it here.',
                     recipeCardBuilder:
                         (recipe) => Padding(
                           padding: const EdgeInsets.only(bottom: 24),
@@ -109,7 +170,8 @@ class MyCreationsPage extends StatelessWidget {
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(24),
               ),
-              child:
+              child: Stack(
+                children: [
                   recipe.imageUrl != null && recipe.imageUrl!.isNotEmpty
                       ? kIsWeb
                           ? WebImage(
@@ -131,7 +193,7 @@ class MyCreationsPage extends StatelessWidget {
                               return Container(
                                 height: 250,
                                 width: double.infinity,
-                                decoration: BoxDecoration(
+                                decoration: const BoxDecoration(
                                   color: AppTheme.cardBackground,
                                 ),
                                 child: Center(
@@ -154,6 +216,68 @@ class MyCreationsPage extends StatelessWidget {
                             },
                           )
                       : _buildPlaceholderImage(),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Material(
+                      color: AppTheme.darkBackground.withValues(alpha: 0.75),
+                      shape: const CircleBorder(),
+                      child: PopupMenuButton<String>(
+                        tooltip: 'Saved options',
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        color: AppTheme.cardBackground,
+                        onSelected: (value) async {
+                          if (value == 'unsave') {
+                            await _unsave(context, recipe);
+                          } else if (value == 'delete') {
+                            await _confirmAndDelete(context, recipe);
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'unsave',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.bookmark_remove_outlined,
+                                  color: AppTheme.primaryGreen,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Unsave',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 10),
+                                Text(
+                                  'Delete',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(24.0),

@@ -1,16 +1,19 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:image_picker/image_picker.dart';
 import '../config/feature_flags.dart';
 import '../theme/app_theme.dart';
 import '../exceptions/free_recipe_limit_exception.dart';
 import '../exceptions/generation_limit_exception.dart';
+import '../models/scan_fridge_recipe_type.dart';
 import '../services/ai_settings_service.dart';
 import '../services/audio_settings_service.dart';
 import '../services/openai_service.dart';
 import '../services/auth_service.dart';
+import '../services/measurement_service.dart';
 import '../services/pending_generation_request_store.dart';
 import '../services/recipe_generation_service.dart';
 import '../services/recipe_access_service.dart';
@@ -54,6 +57,15 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
 
   /// True when the current ingredient list came from Scan Fridge / image detect.
   bool _ingredientsFromScan = false;
+
+  /// Scan Fridge recipe-type choice (null for manual Kitchen Treasures generate).
+  ScanFridgeRecipeType? _selectedScanRecipeType;
+  ScanFridgeCuisine _selectedScanCuisine = ScanFridgeCuisine.any;
+  ScanFridgeCookingTime _selectedScanCookingTime = ScanFridgeCookingTime.any;
+  ScanFridgeDifficulty _selectedScanDifficulty = ScanFridgeDifficulty.any;
+  String? _selectedScanDietary;
+  List<String> _originalDetectedIngredients = const [];
+
   List<RecipeModel> _generatedRecipes = [];
   bool _showRecipes = false;
 
@@ -110,6 +122,18 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
       _ingredients
         ..clear()
         ..addAll(pending.ingredients);
+      _selectedScanRecipeType =
+          ScanFridgeRecipeTypeX.fromId(pending.mealType);
+      _selectedScanCuisine = ScanFridgeCuisineX.fromId(pending.cuisine);
+      _selectedScanCookingTime =
+          ScanFridgeCookingTimeX.fromId(pending.cookingTime);
+      _selectedScanDifficulty =
+          ScanFridgeDifficultyX.fromId(pending.difficulty);
+      _selectedScanDietary = pending.dietary;
+      _ingredientsFromScan = _selectedScanRecipeType != null;
+      _originalDetectedIngredients = pending.originalDetectedIngredients.isEmpty
+          ? List<String>.from(pending.ingredients)
+          : List<String>.from(pending.originalDetectedIngredients);
     });
 
     await PendingGenerationRequestStore.instance.clear();
@@ -155,6 +179,13 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
         PendingGenerationRequest(
           source: 'ingredients',
           ingredients: List<String>.from(_ingredients),
+          mealType: _selectedScanRecipeType?.id,
+          dietary: _selectedScanDietary,
+          cuisine: _selectedScanCuisine.id,
+          cookingTime: _selectedScanCookingTime.id,
+          difficulty: _selectedScanDifficulty.id,
+          originalDetectedIngredients:
+              List<String>.from(_originalDetectedIngredients),
         ),
       );
 
@@ -215,25 +246,71 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
 
       final openaiService = OpenAIService(settings);
 
+      final locale = PlatformDispatcher.instance.locale;
+      final languageLabel = locale.toLanguageTag();
+      final countryCode = (locale.countryCode ?? '').toUpperCase();
+      final measurement = MeasurementService.instance.effectiveSystem ==
+              MeasurementSystem.us
+          ? 'US customary (cups, oz, °F)'
+          : 'metric (g, ml, °C)';
+      final recipeType = _selectedScanRecipeType;
+      if (_ingredientsFromScan && recipeType == null) {
+        throw Exception(
+          'Select a recipe type before generating a Scan Fridge recipe.',
+        );
+      }
+
+      debugLogScanFridgePreferences('final prefs sent to AI', {
+        'recipeType': recipeType?.id ?? 'none',
+        'cuisine': _selectedScanCuisine.id,
+        'cookingTime': _selectedScanCookingTime.id,
+        'difficulty': _selectedScanDifficulty.id,
+        'dietary': _selectedScanDietary ?? 'None',
+      });
+      debugPrint(
+        '[ScanFridge] generating recipe — '
+        'language=$languageLabel country=$countryCode '
+        'measurement=$measurement '
+        'ingredients=${_ingredients.join(', ')}',
+      );
+
       final recipes = await openaiService.generateRecipesFromIngredients(
         ingredients: _ingredients,
         numberOfRecipes: 1,
+        recipeType: recipeType?.mealTypeLabel,
+        recipeTypeConstraint: recipeType?.promptConstraint,
+        cuisine: _selectedScanCuisine.isAny
+            ? null
+            : _selectedScanCuisine.label,
+        cuisineConstraint: _ingredientsFromScan
+            ? _selectedScanCuisine.promptConstraint
+            : null,
+        cookingTime: _selectedScanCookingTime.isAny
+            ? null
+            : _selectedScanCookingTime.label,
+        cookingTimeConstraint: _ingredientsFromScan
+            ? _selectedScanCookingTime.promptConstraint
+            : null,
+        difficulty: _selectedScanDifficulty.isAny
+            ? null
+            : _selectedScanDifficulty.label,
+        difficultyConstraint: _ingredientsFromScan
+            ? _selectedScanDifficulty.promptConstraint
+            : null,
+        difficultyJsonValue: _ingredientsFromScan
+            ? _selectedScanDifficulty.jsonDifficulty
+            : null,
+        dietary: _selectedScanDietary,
+        language: languageLabel,
+        countryCode: countryCode.isEmpty ? null : countryCode,
+        measurementSystem: measurement,
+        originalDetectedIngredients: _originalDetectedIngredients.isEmpty
+            ? null
+            : _originalDetectedIngredients,
       );
 
       List<RecipeModel> recipesWithImages = [];
       for (var recipe in recipes) {
-        String? imageUrl;
-
-        try {
-          imageUrl = await openaiService.generateRecipeImage(
-            recipe.title,
-            'Professional food photography, high quality, well-lit, appetizing ${recipe.cuisine} cuisine dish, restaurant presentation, realistic, natural lighting, detailed texture',
-            userId: user == null || user.isAnonymous ? 'guest' : user.uid,
-          );
-        } catch (e) {
-          debugPrint('⚠️ Image generation failed: $e');
-        }
-
         final recipeWithUser = RecipeModel(
           id: recipe.id,
           userId: user == null || user.isAnonymous ? 'guest' : user.uid,
@@ -250,12 +327,16 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
           instructions: recipe.instructions,
           dietary: recipe.dietary,
           nutrition: recipe.nutrition,
-          imageUrl: imageUrl,
+          imageUrl: null,
           createdAt: recipe.createdAt,
         );
 
-        RecipeModel savedRecipe = await _recipeGenerationService
-            .persistGeneratedRecipe(recipeWithUser, source: _accessSource);
+        final savedRecipe = await _recipeGenerationService
+            .persistGeneratedRecipeWithImage(
+          recipeWithoutImage: recipeWithUser,
+          openai: openaiService,
+          source: _accessSource,
+        );
         recipesWithImages.add(savedRecipe);
       }
 
@@ -270,6 +351,8 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
         final savedRecipe = recipesWithImages.first;
         final isRegistered = user != null && !user.isAnonymous;
         final missingIngredients = _getMissingIngredients(savedRecipe);
+        final hasImage =
+            savedRecipe.imageUrl != null && savedRecipe.imageUrl!.isNotEmpty;
 
         if (isRegistered) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -280,10 +363,9 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      savedRecipe.imageUrl != null &&
-                              savedRecipe.imageUrl!.isNotEmpty
+                      hasImage
                           ? 'Recipe saved to My Recipes!'
-                          : 'Recipe saved! (Image generation skipped)',
+                          : 'Recipe saved. Image is still finishing…',
                     ),
                   ),
                 ],
@@ -372,13 +454,35 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
       return;
     }
 
+    if (AppMessageDialog.isFridgeScanLimitError(error)) {
+      await _showFridgeScanLimit(error);
+      return;
+    }
+
     await AppMessageDialog.showError(context: context, message: message);
+  }
+
+  Future<void> _showFridgeScanLimit(Object error) async {
+    if (!mounted) return;
+    await AppMessageDialog.showFridgeScanLimit(
+      context: context,
+      message: AppMessageDialog.cleanErrorMessage(error),
+    );
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PricingPage()),
+    );
   }
 
   Future<void> _scanFromCamera() async {
     try {
+      await RecipeAccessService.instance.assertCanFridgeScan(source: 'scanFridge');
       final image = await ImagePickerHelper.pickXFileFromCamera();
       if (image != null) await _detectFromXFile(image);
+    } on FridgeScanLimitException catch (e) {
+      if (!mounted) return;
+      await _showFridgeScanLimit(e);
     } catch (e) {
       if (!mounted) return;
       await AppMessageDialog.showError(
@@ -390,8 +494,12 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
 
   Future<void> _scanFromGallery() async {
     try {
+      await RecipeAccessService.instance.assertCanFridgeScan(source: 'scanFridge');
       final image = await ImagePickerHelper.pickXFileFromGallery();
       if (image != null) await _detectFromXFile(image);
+    } on FridgeScanLimitException catch (e) {
+      if (!mounted) return;
+      await _showFridgeScanLimit(e);
     } catch (e) {
       if (!mounted) return;
       await AppMessageDialog.showError(
@@ -483,6 +591,16 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
   Future<void> _detectFromXFile(XFile image) async {
     if (_isDetecting) return;
 
+    // New Scan Fridge flow — reset prior customization preferences.
+    setState(() {
+      _selectedScanRecipeType = null;
+      _selectedScanCuisine = ScanFridgeCuisine.any;
+      _selectedScanCookingTime = ScanFridgeCookingTime.any;
+      _selectedScanDifficulty = ScanFridgeDifficulty.any;
+      _selectedScanDietary = null;
+      _originalDetectedIngredients = const [];
+    });
+
     setState(() => _isDetecting = true);
 
     showDialog(
@@ -541,19 +659,45 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
         return;
       }
 
-      final reviewedIngredients = await Navigator.push<List<String>>(
+      // Successful ingredient detection → consume 1 Fridge Scan (paid only).
+      try {
+        await RecipeAccessService.instance.recordSuccessfulFridgeScan(
+          source: 'scanFridge',
+          scanSucceeded: true,
+        );
+      } on FridgeScanLimitException catch (e) {
+        if (!mounted) return;
+        await _showFridgeScanLimit(e);
+        return;
+      }
+
+      if (!mounted) return;
+      final reviewResult = await Navigator.push<DetectedIngredientsResult>(
         context,
         MaterialPageRoute(
           builder: (_) => DetectedIngredientsPage(initialIngredients: detected),
         ),
       );
 
-      if (!mounted || reviewedIngredients == null) return;
+      if (!mounted || reviewResult == null) return;
+      if (reviewResult.ingredients.isEmpty) return;
+
+      debugLogScanFridgePreferences(
+        'review complete',
+        reviewResult.debugMap,
+      );
 
       setState(() {
         _ingredients
           ..clear()
-          ..addAll(reviewedIngredients);
+          ..addAll(reviewResult.ingredients);
+        _originalDetectedIngredients =
+            List<String>.from(reviewResult.originalDetectedIngredients);
+        _selectedScanRecipeType = reviewResult.recipeType;
+        _selectedScanCuisine = reviewResult.cuisine;
+        _selectedScanCookingTime = reviewResult.cookingTime;
+        _selectedScanDifficulty = reviewResult.difficulty;
+        _selectedScanDietary = reviewResult.dietary;
         _ingredientsFromScan = true;
         _showRecipes = false;
       });
@@ -1373,6 +1517,12 @@ class _KitchenTreasuresPageState extends State<KitchenTreasuresPage>
       setState(() {
         _ingredients.add(_ingredientController.text.trim());
         _ingredientsFromScan = false;
+        _selectedScanRecipeType = null;
+        _selectedScanCuisine = ScanFridgeCuisine.any;
+        _selectedScanCookingTime = ScanFridgeCookingTime.any;
+        _selectedScanDifficulty = ScanFridgeDifficulty.any;
+        _selectedScanDietary = null;
+        _originalDetectedIngredients = const [];
         _ingredientController.clear();
       });
     }

@@ -50,6 +50,7 @@ Map<String, dynamic> sanitizeRecipeForFirestore(Map<String, dynamic> data) {
 
   sanitized['userId'] = '${sanitized['userId'] ?? ''}';
   sanitized['isPublic'] = sanitized['isPublic'] ?? true;
+  sanitized['isSaved'] = sanitized['isSaved'] == true;
 
   return sanitized;
 }

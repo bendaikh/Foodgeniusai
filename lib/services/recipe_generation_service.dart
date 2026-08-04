@@ -4,6 +4,8 @@ import '../models/recipe_model.dart';
 import 'auth_service.dart';
 import 'firestore_service.dart';
 import 'generation_usage_service.dart';
+import 'openai_service.dart';
+import 'pending_image_completion_service.dart';
 import 'pending_recipe_service.dart';
 import 'recipe_access_service.dart';
 
@@ -29,6 +31,8 @@ class RecipeGenerationService {
   /// Guests are stored as pending until they create an account.
   ///
   /// Does **not** consume free/paid generation quota.
+  /// Idempotent: if [recipe.id] already exists in Firestore, returns that
+  /// document without overwriting (avoids wiping a finished imageUrl).
   Future<RecipeModel> ensureInMyRecipes(RecipeModel recipe) async {
     final user = _authService.currentUser;
     if (user == null || user.isAnonymous) {
@@ -43,6 +47,17 @@ class RecipeGenerationService {
     }
 
     final recipeForUser = recipe.copyWith(userId: user.uid);
+
+    final existingId = recipeForUser.id;
+    if (existingId != null && existingId.isNotEmpty) {
+      final existing = await _firestoreService.getRecipeById(existingId);
+      if (existing != null) {
+        // Already in My Recipes — do not copy into pending storage.
+        // Writing here caused deleted recipes to be recreated by claimAndPersist.
+        return existing;
+      }
+    }
+
     final docId = await _firestoreService.createRecipe(recipeForUser);
     final savedRecipe = recipeForUser.copyWith(id: docId);
 
@@ -58,6 +73,31 @@ class RecipeGenerationService {
     }
 
     return savedRecipe;
+  }
+
+  /// Saves recipe text first (consumes quota once), then completes the image
+  /// via [PendingImageCompletionService] without a second quota charge.
+  Future<RecipeModel> persistGeneratedRecipeWithImage({
+    required RecipeModel recipeWithoutImage,
+    required OpenAIService openai,
+    required String source,
+  }) async {
+    final saved = await persistGeneratedRecipe(
+      recipeWithoutImage,
+      source: source,
+    );
+
+    final imageUrl = await PendingImageCompletionService.instance
+        .completeForRecipe(
+      recipe: saved,
+      openai: openai,
+      source: source,
+    );
+
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return saved;
+    }
+    return saved.copyWith(imageUrl: imageUrl);
   }
 
   /// Saves a recipe, then records a successful generation (free or paid).
