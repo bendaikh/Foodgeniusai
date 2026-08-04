@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ masks the splash icon into a circle. Inset the rounded-square
+     logo so it fits entirely inside that circle; the transparent area around
+     it shows the dark splash background, so the visible shape stays a rounded
+     rectangle instead of a circle. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_logo"
+    android:insetLeft="23%"
+    android:insetTop="23%"
+    android:insetRight="23%"
+    android:insetBottom="23%" />

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Green gradient sampled from the FoodGenius app icon artwork so the
+     adaptive icon background blends seamlessly with the foreground. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#90E46B"
+        android:endColor="#20803E"
+        android:type="linear" />
+</shape>

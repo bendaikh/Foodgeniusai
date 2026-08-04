@@ -1,14 +1,12 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Global on/off for optional app audio (voice guide / TTS, etc.).
-///
-/// Cooking-generation ambience is independent of [soundEnabled] and always
-/// plays during recipe generation (device volume / silent mode still apply).
+/// Global on/off for app audio (voice guide, cooking ambience, etc.).
 class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
   AudioSettingsService._();
 
@@ -27,6 +25,10 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
   AudioPlayer? _cookingPlayer;
   bool _cookingSoundActive = false;
 
+  /// True while generation wants ambience playing (survives Android lifecycle
+  /// pause so playback can resume when the app returns to foreground).
+  bool _cookingSoundDesired = false;
+
   /// Optional hook so Voice Guidance can pause without a circular import.
   Future<void> Function()? pauseOverlappingAudio;
 
@@ -35,6 +37,9 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
   bool get isCookingGenerationSoundActive => _cookingSoundActive;
   bool get shouldShowFirstLaunchVoicePrompt =>
       _ready && !_firstLaunchPromptShown;
+
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   Future<void> init() async {
     if (!_observerAttached) {
@@ -71,6 +76,10 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
     if (_soundEnabled == enabled) return;
     _soundEnabled = enabled;
     notifyListeners();
+
+    if (!enabled) {
+      await stopCookingGenerationSound();
+    }
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -109,10 +118,36 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Subtle looping kitchen ambience while a recipe is being generated.
   ///
-  /// Always plays during generation, independent of [soundEnabled]. Stops any
-  /// previous cooking loop first so players never overlap.
+  /// No-ops when audio is disabled. Always stops any previous cooking loop
+  /// first so players never overlap.
   Future<void> startCookingGenerationSound() async {
-    await stopCookingGenerationSound();
+    await _stopCookingPlayerOnly();
+    _cookingSoundDesired = true;
+    if (!_soundEnabled) {
+      if (_isAndroid && kDebugMode) {
+        debugPrint(
+          'AudioSettingsService Android: cooking sound skipped '
+          '(global sound toggle off)',
+        );
+      }
+      return;
+    }
+
+    await _startCookingPlayer();
+  }
+
+  /// Stops the cooking-generation loop immediately (safe to call anytime).
+  Future<void> stopCookingGenerationSound() async {
+    _cookingSoundDesired = false;
+    await _stopCookingPlayerOnly();
+    if (_isAndroid && kDebugMode) {
+      debugPrint('AudioSettingsService Android: cooking sound stopped');
+    }
+  }
+
+  Future<void> _startCookingPlayer() async {
+    if (!_soundEnabled || !_cookingSoundDesired) return;
+    if (_cookingSoundActive && _cookingPlayer != null) return;
 
     try {
       final pause = pauseOverlappingAudio;
@@ -122,18 +157,55 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
 
       final player = AudioPlayer();
       _cookingPlayer = player;
+
+      // Android needs an explicit media audio context for reliable asset loop
+      // playback. iOS keeps audioplayers defaults (unchanged behavior).
+      if (_isAndroid) {
+        await player.setAudioContext(
+          AudioContext(
+            android: const AudioContextAndroid(
+              contentType: AndroidContentType.music,
+              usageType: AndroidUsageType.media,
+              audioFocus: AndroidAudioFocus.gain,
+            ),
+          ),
+        );
+        await player.setPlayerMode(PlayerMode.mediaPlayer);
+        if (kDebugMode) {
+          debugPrint(
+            'AudioSettingsService Android: cooking sound starting '
+            '(asset=$_cookingAsset, volume=$_cookingVolume)',
+          );
+        }
+      }
+
       await player.setReleaseMode(ReleaseMode.loop);
       await player.setVolume(_cookingVolume);
-      await player.play(AssetSource(_cookingAsset));
+
+      // setSource + resume is more reliable for looping assets on Android.
+      if (_isAndroid) {
+        await player.setSource(AssetSource(_cookingAsset));
+        await player.resume();
+      } else {
+        await player.play(AssetSource(_cookingAsset));
+      }
+
       _cookingSoundActive = true;
-    } catch (e) {
-      debugPrint('AudioSettingsService cooking start error: $e');
-      await stopCookingGenerationSound();
+      if (_isAndroid && kDebugMode) {
+        debugPrint('AudioSettingsService Android: cooking sound started');
+      }
+    } catch (e, stackTrace) {
+      if (_isAndroid) {
+        debugPrint('AudioSettingsService Android: cooking start error: $e');
+        if (kDebugMode) debugPrint('$stackTrace');
+      } else {
+        debugPrint('AudioSettingsService cooking start error: $e');
+      }
+      await _stopCookingPlayerOnly();
     }
   }
 
-  /// Stops the cooking-generation loop immediately (safe to call anytime).
-  Future<void> stopCookingGenerationSound() async {
+  Future<void> _stopCookingPlayerOnly() async {
     final player = _cookingPlayer;
     _cookingPlayer = null;
     _cookingSoundActive = false;
@@ -151,12 +223,32 @@ class AudioSettingsService extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.inactive:
+        // iOS: keep existing behavior (stop on inactive).
+        // Android: ignore inactive — it fires for transient UI and would
+        // kill the cooking loop mid-generation.
+        if (!_isAndroid) {
+          unawaited(_stopCookingPlayerOnly());
+        }
+        break;
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
       case AppLifecycleState.detached:
-        unawaited(stopCookingGenerationSound());
+        unawaited(_stopCookingPlayerOnly());
         break;
       case AppLifecycleState.resumed:
+        // Android only: resume ambience if generation still wants it.
+        if (_isAndroid &&
+            _cookingSoundDesired &&
+            _soundEnabled &&
+            !_cookingSoundActive) {
+          if (kDebugMode) {
+            debugPrint(
+              'AudioSettingsService Android: resuming cooking sound '
+              'after foreground',
+            );
+          }
+          unawaited(_startCookingPlayer());
+        }
         break;
     }
   }
